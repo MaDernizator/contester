@@ -5,6 +5,7 @@ import os
 from flask import Flask
 
 from contester.api import register_blueprints
+from contester.auth import register_authentication
 from contester.cli import register_commands
 from contester.config import get_settings
 from contester.error_handlers import register_error_handlers
@@ -22,6 +23,7 @@ def create_app(environment: str | None = None) -> Flask:
 
     db.init_app(app)
     migrate.init_app(app, db)
+    register_authentication(app)
 
     import contester.models  # noqa: F401
 

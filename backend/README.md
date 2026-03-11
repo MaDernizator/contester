@@ -9,8 +9,6 @@ Backend API for the local contest management system.
 ```bash
 docker compose up -d db
 
-Create local env file from the example and make sure the DB port is 55432.
-
 Install dependencies:
 
 cd backend
@@ -29,5 +27,19 @@ Start the application:
 python -m contester.app
 Create first admin
 flask --app wsgi create-admin
-Health check
-GET /api/v1/health
+Main endpoints
+GET  /api/v1/health
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+POST /api/v1/auth/logout
+GET  /api/v1/auth/me
+GET  /api/v1/admin/session
+Notes
+
+Participants register via the public API.
+
+Admin accounts are created only via CLI.
+
+Authentication is session-based.
+
+If you run backend locally against Docker PostgreSQL on a custom host port, set DATABASE_URL in backend/.env accordingly.

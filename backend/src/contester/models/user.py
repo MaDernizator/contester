@@ -80,6 +80,17 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
     def password(self) -> str:
         raise AttributeError("Password is write-only.")
 
+    @property
+    def is_authenticated(self) -> bool:
+        return True
+
+    @property
+    def is_anonymous(self) -> bool:
+        return False
+
+    def get_id(self) -> str:
+        return str(self.id)
+
     @classmethod
     def create(
         cls,

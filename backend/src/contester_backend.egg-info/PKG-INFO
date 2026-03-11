@@ -5,6 +5,7 @@ Summary: Backend API for the local contest management system
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 Requires-Dist: Flask<4.0,>=3.0
+Requires-Dist: Flask-Login<1.0,>=0.6
 Requires-Dist: Flask-SQLAlchemy<4.0,>=3.1
 Requires-Dist: Flask-Migrate<5.0,>=4.0
 Requires-Dist: psycopg[binary]<4.0,>=3.2
@@ -23,6 +24,7 @@ Backend API for the local contest management system.
 
 ```bash
 docker compose up -d db
+
 Install dependencies:
 
 cd backend
@@ -41,5 +43,19 @@ Start the application:
 python -m contester.app
 Create first admin
 flask --app wsgi create-admin
-Health check
-GET /api/v1/health
+Main endpoints
+GET  /api/v1/health
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+POST /api/v1/auth/logout
+GET  /api/v1/auth/me
+GET  /api/v1/admin/session
+Notes
+
+Participants register via the public API.
+
+Admin accounts are created only via CLI.
+
+Authentication is session-based.
+
+If you run backend locally against Docker PostgreSQL on a custom host port, set DATABASE_URL in backend/.env accordingly.
