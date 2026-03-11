@@ -28,6 +28,7 @@ class Settings:
     debug: bool
     testing: bool
     secret_key: str
+    database_uri: str
     json_sort_keys: bool = False
 
     def to_mapping(self) -> dict[str, object]:
@@ -39,6 +40,11 @@ class Settings:
             "TESTING": self.testing,
             "SECRET_KEY": self.secret_key,
             "JSON_SORT_KEYS": self.json_sort_keys,
+            "SQLALCHEMY_DATABASE_URI": self.database_uri,
+            "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+            "SQLALCHEMY_ENGINE_OPTIONS": {
+                "pool_pre_ping": not self.testing,
+            },
         }
 
 
@@ -60,6 +66,14 @@ def get_settings(environment: str | None = None) -> Settings:
     is_testing = resolved_environment == "testing"
     debug_default = resolved_environment == "development"
 
+    if is_testing:
+        database_uri = "sqlite+pysqlite:///:memory:"
+    else:
+        database_uri = os.getenv(
+            "DATABASE_URL",
+            "postgresql+psycopg://contester:contester@127.0.0.1:5432/contester",
+        )
+
     return Settings(
         app_name=os.getenv("APP_NAME", "contester-backend"),
         environment=resolved_environment,
@@ -67,4 +81,5 @@ def get_settings(environment: str | None = None) -> Settings:
         debug=False if is_testing else _read_bool("APP_DEBUG", debug_default),
         testing=is_testing,
         secret_key=secret_key,
+        database_uri=database_uri,
     )

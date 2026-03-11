@@ -1,13 +1,37 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: contester-db
+    environment:
+      POSTGRES_DB: contester
+      POSTGRES_USER: contester
+      POSTGRES_PASSWORD: contester
+    ports:
+      - "5432:5432"
+    volumes:
+      - contester_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contester -d contester"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ./backend
     container_name: contester-backend
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       APP_ENV: development
       APP_NAME: contester-backend
       SECRET_KEY: local-dev-secret-key
+      DATABASE_URL: postgresql+psycopg://contester:contester@db:5432/contester
       FLASK_RUN_HOST: 0.0.0.0
       FLASK_RUN_PORT: 8000
     ports:
       - "8000:8000"
+
+volumes:
+  contester_postgres_data:

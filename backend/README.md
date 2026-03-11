@@ -4,10 +4,27 @@ Backend API for the local contest management system.
 
 ## Local development
 
-```bash
-python -m pip install -e ".[dev]"
-pytest
-python -m contester.app
+1. Start PostgreSQL:
 
+```bash
+docker compose up -d db
+Install dependencies:
+
+cd backend
+python -m pip install -e ".[dev]"
+
+Apply migrations:
+
+flask --app wsgi db upgrade
+
+Run tests:
+
+pytest
+
+Start the application:
+
+python -m contester.app
+Create first admin
+flask --app wsgi create-admin
 Health check
 GET /api/v1/health

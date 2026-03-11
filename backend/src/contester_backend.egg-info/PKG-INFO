@@ -5,6 +5,9 @@ Summary: Backend API for the local contest management system
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 Requires-Dist: Flask<4.0,>=3.0
+Requires-Dist: Flask-SQLAlchemy<4.0,>=3.1
+Requires-Dist: Flask-Migrate<5.0,>=4.0
+Requires-Dist: psycopg[binary]<4.0,>=3.2
 Requires-Dist: python-dotenv<2.0,>=1.0
 Provides-Extra: dev
 Requires-Dist: pytest<9.0,>=8.0; extra == "dev"
@@ -16,10 +19,27 @@ Backend API for the local contest management system.
 
 ## Local development
 
-```bash
-python -m pip install -e ".[dev]"
-pytest
-python -m contester.app
+1. Start PostgreSQL:
 
+```bash
+docker compose up -d db
+Install dependencies:
+
+cd backend
+python -m pip install -e ".[dev]"
+
+Apply migrations:
+
+flask --app wsgi db upgrade
+
+Run tests:
+
+pytest
+
+Start the application:
+
+python -m contester.app
+Create first admin
+flask --app wsgi create-admin
 Health check
 GET /api/v1/health
