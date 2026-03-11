@@ -1,0 +1,6 @@
+Flask<4.0,>=3.0
+python-dotenv<2.0,>=1.0
+
+[dev]
+pytest<9.0,>=8.0
+ruff<1.0,>=0.6

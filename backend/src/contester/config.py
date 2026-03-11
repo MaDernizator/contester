@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(BACKEND_ROOT / ".env")
+
+VALID_ENVIRONMENTS = {"development", "testing", "production"}
+
+
+def _read_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(slots=True)
+class Settings:
+    app_name: str
+    environment: str
+    api_prefix: str
+    debug: bool
+    testing: bool
+    secret_key: str
+    json_sort_keys: bool = False
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "APP_NAME": self.app_name,
+            "APP_ENV": self.environment,
+            "API_PREFIX": self.api_prefix,
+            "DEBUG": self.debug,
+            "TESTING": self.testing,
+            "SECRET_KEY": self.secret_key,
+            "JSON_SORT_KEYS": self.json_sort_keys,
+        }
+
+
+def get_settings(environment: str | None = None) -> Settings:
+    resolved_environment = (environment or os.getenv("APP_ENV", "development")).strip().lower()
+
+    if resolved_environment not in VALID_ENVIRONMENTS:
+        supported = ", ".join(sorted(VALID_ENVIRONMENTS))
+        raise ValueError(
+            f"Unsupported APP_ENV={resolved_environment!r}. Supported values: {supported}."
+        )
+
+    secret_key = os.getenv("SECRET_KEY")
+    if not secret_key:
+        if resolved_environment == "production":
+            raise ValueError("SECRET_KEY must be set in production environment.")
+        secret_key = "local-dev-secret-key"
+
+    is_testing = resolved_environment == "testing"
+    debug_default = resolved_environment == "development"
+
+    return Settings(
+        app_name=os.getenv("APP_NAME", "contester-backend"),
+        environment=resolved_environment,
+        api_prefix="/api/v1",
+        debug=False if is_testing else _read_bool("APP_DEBUG", debug_default),
+        testing=is_testing,
+        secret_key=secret_key,
+    )

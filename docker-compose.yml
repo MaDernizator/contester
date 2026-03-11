@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: contester-backend
+    environment:
+      APP_ENV: development
+      APP_NAME: contester-backend
+      SECRET_KEY: local-dev-secret-key
+      FLASK_RUN_HOST: 0.0.0.0
+      FLASK_RUN_PORT: 8000
+    ports:
+      - "8000:8000"
