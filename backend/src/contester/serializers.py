@@ -6,8 +6,14 @@ from contester.models.contest import Contest
 from contester.models.user import User
 
 
+def _ensure_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _serialize_datetime(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return _ensure_utc_datetime(value).isoformat().replace("+00:00", "Z")
 
 
 def _serialize_optional_datetime(value: datetime | None) -> str | None:
@@ -18,16 +24,24 @@ def _serialize_optional_datetime(value: datetime | None) -> str | None:
 
 def _get_contest_phase(contest: Contest) -> str:
     now = datetime.now(timezone.utc)
+    starts_at = (
+        _ensure_utc_datetime(contest.starts_at)
+        if contest.starts_at is not None
+        else None
+    )
+    ends_at = (
+        _ensure_utc_datetime(contest.ends_at)
+        if contest.ends_at is not None
+        else None
+    )
 
-    if contest.ends_at is not None and now >= contest.ends_at:
+    if ends_at is not None and now >= ends_at:
         return "finished"
 
-    if contest.starts_at is not None and now < contest.starts_at:
+    if starts_at is not None and now < starts_at:
         return "upcoming"
 
-    if contest.starts_at is not None and (
-        contest.ends_at is None or contest.starts_at <= now < contest.ends_at
-    ):
+    if starts_at is not None and (ends_at is None or starts_at <= now < ends_at):
         return "running"
 
     return "unscheduled"
