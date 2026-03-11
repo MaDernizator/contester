@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from sqlalchemy import Boolean, Enum, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from contester.extensions import db
 from contester.models.base import TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from contester.models.contest import Contest
 
 
 class UserRole(StrEnum):
@@ -38,6 +41,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
         index=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+
+    created_contests: Mapped[list[Contest]] = relationship(back_populates="created_by")
 
     def __repr__(self) -> str:
         return f"User(id={self.id!s}, username={self.username!r}, role={self.role.value!r})"
@@ -93,14 +98,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
 
     @classmethod
     def create(
-        cls,
-        *,
-        username: str,
-        password: str,
-        role: UserRole = UserRole.PARTICIPANT,
-        email: str | None = None,
-        full_name: str | None = None,
-        is_active: bool = True,
+            cls,
+            *,
+            username: str,
+            password: str,
+            role: UserRole = UserRole.PARTICIPANT,
+            email: str | None = None,
+            full_name: str | None = None,
+            is_active: bool = True,
     ) -> Self:
         user = cls(
             username=cls._normalize_username(username),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, session
 from flask_login import login_required, login_user, logout_user
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -11,39 +11,14 @@ from werkzeug.exceptions import BadRequest, Conflict, Unauthorized
 from contester.auth import get_authenticated_user
 from contester.extensions import db
 from contester.models.user import User, UserRole
+from contester.request_validation import (
+    get_json_object,
+    read_optional_string,
+    read_required_string,
+)
 from contester.serializers import serialize_user
 
 auth_blueprint = Blueprint("auth", __name__)
-
-
-def _get_json_payload() -> dict[str, object]:
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        raise BadRequest("Request body must be a valid JSON object.")
-    return payload
-
-
-def _read_required_string(payload: dict[str, object], field_name: str) -> str:
-    value = payload.get(field_name)
-    if not isinstance(value, str):
-        raise BadRequest(f"Field {field_name!r} must be a string.")
-
-    normalized = value.strip()
-    if not normalized:
-        raise BadRequest(f"Field {field_name!r} must not be empty.")
-
-    return normalized
-
-
-def _read_optional_string(payload: dict[str, object], field_name: str) -> str | None:
-    value = payload.get(field_name)
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise BadRequest(f"Field {field_name!r} must be a string or null.")
-
-    normalized = value.strip()
-    return normalized or None
 
 
 def _find_user_by_username(username: str) -> User | None:
@@ -58,12 +33,12 @@ def _find_user_by_email(email: str) -> User | None:
 
 @auth_blueprint.post("/auth/register")
 def register_participant():
-    payload = _get_json_payload()
+    payload = get_json_object()
 
-    username = _read_required_string(payload, "username")
-    password = _read_required_string(payload, "password")
-    email = _read_optional_string(payload, "email")
-    full_name = _read_optional_string(payload, "full_name")
+    username = read_required_string(payload, "username", max_length=32)
+    password = read_required_string(payload, "password")
+    email = read_optional_string(payload, "email", max_length=255)
+    full_name = read_optional_string(payload, "full_name", max_length=128)
 
     normalized_email = email.lower() if email is not None else None
 
@@ -95,10 +70,10 @@ def register_participant():
 
 @auth_blueprint.post("/auth/login")
 def login():
-    payload = _get_json_payload()
+    payload = get_json_object()
 
-    username = _read_required_string(payload, "username")
-    password = _read_required_string(payload, "password")
+    username = read_required_string(payload, "username", max_length=32)
+    password = read_required_string(payload, "password")
 
     user = _find_user_by_username(username)
     if user is None or not user.is_active or not user.check_password(password):
