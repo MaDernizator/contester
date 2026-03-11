@@ -71,7 +71,7 @@ def get_settings(environment: str | None = None) -> Settings:
     else:
         database_uri = os.getenv(
             "DATABASE_URL",
-            "postgresql+psycopg://contester:contester@127.0.0.1:5432/contester",
+            "postgresql+psycopg://contester:contester@127.0.0.1:55432/contester",
         )
 
     return Settings(

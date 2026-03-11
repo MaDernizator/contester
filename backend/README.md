@@ -8,6 +8,9 @@ Backend API for the local contest management system.
 
 ```bash
 docker compose up -d db
+
+Create local env file from the example and make sure the DB port is 55432.
+
 Install dependencies:
 
 cd backend
