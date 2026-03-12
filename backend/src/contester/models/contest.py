@@ -12,6 +12,7 @@ from contester.extensions import db
 from contester.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from contester.models.problem import Problem
     from contester.models.user import User
 
 
@@ -59,6 +60,11 @@ class Contest(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
     )
 
     created_by: Mapped[User] = relationship(back_populates="created_contests")
+    problems: Mapped[list[Problem]] = relationship(
+        back_populates="contest",
+        cascade="all, delete-orphan",
+        order_by="Problem.position",
+    )
 
     def __repr__(self) -> str:
         return f"Contest(id={self.id!s}, slug={self.slug!r}, status={self.status.value!r})"

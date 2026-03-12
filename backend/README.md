@@ -40,8 +40,15 @@ POST  /api/v1/admin/contests
 GET   /api/v1/admin/contests/<contest_id>
 PATCH /api/v1/admin/contests/<contest_id>
 
+GET   /api/v1/admin/contests/<contest_id>/problems
+POST  /api/v1/admin/contests/<contest_id>/problems
+GET   /api/v1/admin/problems/<problem_id>
+PATCH /api/v1/admin/problems/<problem_id>
+
 GET   /api/v1/contests
 GET   /api/v1/contests/<slug>
+GET   /api/v1/contests/<slug>/problems
+GET   /api/v1/contests/<slug>/problems/<problem_code>
 Notes
 
 Participants register via the public API.
@@ -50,6 +57,6 @@ Admin accounts are created only via CLI.
 
 Authentication is session-based.
 
-Participants can view only published contests.
+Participants can view only published contests and published problems of published contests.
 
 If you run backend locally against Docker PostgreSQL on a custom host port, set DATABASE_URL in backend/.env accordingly.

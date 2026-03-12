@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from contester.models.contest import Contest
+from contester.models.problem import Problem
 from contester.models.user import User
 
 
@@ -69,6 +70,15 @@ def serialize_user_summary(user: User) -> dict[str, object]:
     }
 
 
+def serialize_contest_summary(contest: Contest) -> dict[str, object]:
+    return {
+        "id": str(contest.id),
+        "title": contest.title,
+        "slug": contest.slug,
+        "status": contest.status.value,
+    }
+
+
 def serialize_contest(contest: Contest) -> dict[str, object]:
     return {
         "id": str(contest.id),
@@ -82,4 +92,32 @@ def serialize_contest(contest: Contest) -> dict[str, object]:
         "created_at": _serialize_datetime(contest.created_at),
         "updated_at": _serialize_datetime(contest.updated_at),
         "created_by": serialize_user_summary(contest.created_by),
+    }
+
+
+def serialize_problem_summary(problem: Problem) -> dict[str, object]:
+    return {
+        "id": str(problem.id),
+        "contest_id": str(problem.contest_id),
+        "code": problem.code,
+        "title": problem.title,
+        "position": problem.position,
+        "status": problem.status.value,
+        "time_limit_ms": problem.time_limit_ms,
+        "memory_limit_mb": problem.memory_limit_mb,
+        "created_at": _serialize_datetime(problem.created_at),
+        "updated_at": _serialize_datetime(problem.updated_at),
+    }
+
+
+def serialize_problem(problem: Problem) -> dict[str, object]:
+    return {
+        **serialize_problem_summary(problem),
+        "statement": problem.statement,
+        "input_specification": problem.input_specification,
+        "output_specification": problem.output_specification,
+        "notes": problem.notes,
+        "sample_input": problem.sample_input,
+        "sample_output": problem.sample_output,
+        "contest": serialize_contest_summary(problem.contest),
     }

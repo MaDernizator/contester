@@ -60,6 +60,49 @@ def read_optional_string(
     return normalized
 
 
+def read_required_int(
+    payload: dict[str, object],
+    field_name: str,
+    *,
+    min_value: int | None = None,
+    max_value: int | None = None,
+) -> int:
+    value = payload.get(field_name)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BadRequest(f"Field {field_name!r} must be an integer.")
+
+    if min_value is not None and value < min_value:
+        raise BadRequest(f"Field {field_name!r} must be greater than or equal to {min_value}.")
+
+    if max_value is not None and value > max_value:
+        raise BadRequest(f"Field {field_name!r} must be less than or equal to {max_value}.")
+
+    return value
+
+
+def read_optional_int(
+    payload: dict[str, object],
+    field_name: str,
+    *,
+    min_value: int | None = None,
+    max_value: int | None = None,
+) -> int | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BadRequest(f"Field {field_name!r} must be an integer or null.")
+
+    if min_value is not None and value < min_value:
+        raise BadRequest(f"Field {field_name!r} must be greater than or equal to {min_value}.")
+
+    if max_value is not None and value > max_value:
+        raise BadRequest(f"Field {field_name!r} must be less than or equal to {max_value}.")
+
+    return value
+
+
 def read_optional_datetime(
     payload: dict[str, object],
     field_name: str,
