@@ -18,6 +18,8 @@ class TestCase(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
         CheckConstraint("position >= 1", name="test_case_position_positive"),
     )
 
+    __test__ = False
+
     problem_id = mapped_column(
         ForeignKey("problems.id", ondelete="CASCADE"),
         nullable=False,
