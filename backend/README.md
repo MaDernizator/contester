@@ -71,9 +71,13 @@ Participants can view only published contests and published problems of publishe
 
 Source code is sent as JSON field source_code.
 
-The current judge implementation is synchronous and executes Python locally from the backend process.
+Supported submission languages: python, cpp.
 
-The runner layer is isolated in a separate module so it can be replaced with Docker-based execution later.
+The current judge implementation is synchronous and executes Python/C++ locally from the backend process.
+
+The runner layer is isolated in separate modules so it can be replaced with Docker-based execution later.
+
+For C++ support, a compiler such as g++ must be available in PATH, or CXX_COMPILER must point to it explicitly.
 
 Standings are calculated in ICPC-like style using contest starts_at as the reference point. If starts_at is absent, contest created_at is used as a fallback.
 

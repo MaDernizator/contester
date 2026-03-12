@@ -115,7 +115,11 @@ def create_submission(contest_slug: str, problem_code: str):
         db.session.rollback()
         raise BadRequest(str(error)) from error
 
-    judge_service = JudgeService(Path(current_app.config["JUDGE_WORKSPACE_DIR"]))
+    judge_service = JudgeService(
+        Path(current_app.config["JUDGE_WORKSPACE_DIR"]),
+        cxx_compiler=current_app.config["CXX_COMPILER"],
+        cpp_compile_timeout_sec=current_app.config["CPP_COMPILE_TIMEOUT_SEC"],
+    )
     judge_service.judge_submission(submission.id)
 
     refreshed_submission = _get_submission_or_404(submission.id)

@@ -7,12 +7,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from contester.extensions import db
+from contester.judging.cpp_runner import (
+    CppCompilationStatus,
+    CppRunner,
+)
 from contester.judging.python_runner import (
     PythonExecutionStatus,
     PythonRunner,
 )
 from contester.models.problem import Problem
-from contester.models.submission import Submission, SubmissionVerdict
+from contester.models.submission import (
+    Submission,
+    SubmissionLanguage,
+    SubmissionVerdict,
+)
 from contester.models.test_case import TestCase
 
 
@@ -34,10 +42,24 @@ def _truncate_text(value: str, max_length: int = 4000) -> str:
     return value[:max_length] + "\n...[truncated]"
 
 
+def _merge_logs(*parts: str) -> str:
+    normalized_parts = [part.strip() for part in parts if part.strip()]
+    return "\n\n".join(normalized_parts)
+
+
 class JudgeService:
-    def __init__(self, workspace_root: Path) -> None:
+    def __init__(
+        self,
+        workspace_root: Path,
+        *,
+        cxx_compiler: str,
+        cpp_compile_timeout_sec: int,
+    ) -> None:
         self.workspace_root = workspace_root
         self.python_runner = PythonRunner()
+        self.cpp_runner = CppRunner()
+        self.cxx_compiler = cxx_compiler
+        self.cpp_compile_timeout_sec = cpp_compile_timeout_sec
 
     def judge_submission(self, submission_id) -> Submission:
         submission = db.session.scalar(
@@ -73,6 +95,26 @@ class JudgeService:
             db.session.commit()
             return submission
 
+        if submission.language == SubmissionLanguage.PYTHON:
+            return self._judge_python_submission(submission, test_cases)
+
+        if submission.language == SubmissionLanguage.CPP:
+            return self._judge_cpp_submission(submission, test_cases)
+
+        submission.finish(
+            verdict=SubmissionVerdict.INTERNAL_ERROR,
+            passed_test_count=0,
+            total_test_count=len(test_cases),
+            judge_log=f"Unsupported language: {submission.language.value}.",
+        )
+        db.session.commit()
+        return submission
+
+    def _judge_python_submission(
+        self,
+        submission: Submission,
+        test_cases: list[TestCase],
+    ) -> Submission:
         max_execution_time_ms = 0
         passed_test_count = 0
 
@@ -146,7 +188,159 @@ class JudgeService:
         except Exception as error:
             db.session.rollback()
 
-            submission = db.session.get(Submission, submission_id)
+            submission = db.session.get(Submission, submission.id)
+            if submission is None:
+                raise
+
+            submission.finish(
+                verdict=SubmissionVerdict.INTERNAL_ERROR,
+                passed_test_count=passed_test_count,
+                total_test_count=len(test_cases),
+                execution_time_ms=max_execution_time_ms or None,
+                judge_log=_truncate_text(str(error) or "Internal judge error."),
+            )
+            db.session.commit()
+            return submission
+
+    def _judge_cpp_submission(
+        self,
+        submission: Submission,
+        test_cases: list[TestCase],
+    ) -> Submission:
+        max_execution_time_ms = 0
+        passed_test_count = 0
+
+        try:
+            with tempfile.TemporaryDirectory(dir=self.workspace_root) as temporary_dir:
+                workspace_dir = Path(temporary_dir)
+
+                compile_result = self.cpp_runner.compile(
+                    source_code=submission.source_code,
+                    workspace_dir=workspace_dir,
+                    compiler=self.cxx_compiler,
+                    timeout_sec=self.cpp_compile_timeout_sec,
+                )
+
+                if compile_result.status == CppCompilationStatus.COMPILER_NOT_AVAILABLE:
+                    submission.finish(
+                        verdict=SubmissionVerdict.INTERNAL_ERROR,
+                        passed_test_count=0,
+                        total_test_count=len(test_cases),
+                        judge_log=_truncate_text(
+                            _merge_logs(
+                                "C++ compiler is not available.",
+                                compile_result.stderr,
+                            )
+                        ),
+                    )
+                    db.session.commit()
+                    return submission
+
+                if compile_result.status == CppCompilationStatus.INTERNAL_ERROR:
+                    submission.finish(
+                        verdict=SubmissionVerdict.INTERNAL_ERROR,
+                        passed_test_count=0,
+                        total_test_count=len(test_cases),
+                        judge_log=_truncate_text(
+                            _merge_logs(
+                                "Internal C++ compilation error.",
+                                compile_result.stderr,
+                            )
+                        ),
+                    )
+                    db.session.commit()
+                    return submission
+
+                if compile_result.status == CppCompilationStatus.COMPILATION_ERROR:
+                    submission.finish(
+                        verdict=SubmissionVerdict.COMPILATION_ERROR,
+                        passed_test_count=0,
+                        total_test_count=len(test_cases),
+                        judge_log=_truncate_text(
+                            _merge_logs(compile_result.stdout, compile_result.stderr)
+                            or "Compilation error."
+                        ),
+                    )
+                    db.session.commit()
+                    return submission
+
+                if compile_result.binary_path is None:
+                    submission.finish(
+                        verdict=SubmissionVerdict.INTERNAL_ERROR,
+                        passed_test_count=0,
+                        total_test_count=len(test_cases),
+                        judge_log="Compilation finished without an executable artifact.",
+                    )
+                    db.session.commit()
+                    return submission
+
+                for test_case in test_cases:
+                    result = self.cpp_runner.execute(
+                        binary_path=compile_result.binary_path,
+                        input_data=test_case.input_data,
+                        time_limit_ms=submission.problem.time_limit_ms,
+                        workspace_dir=workspace_dir,
+                    )
+                    max_execution_time_ms = max(
+                        max_execution_time_ms,
+                        result.execution_time_ms,
+                    )
+
+                    if result.status.value == "time_limit_exceeded":
+                        submission.finish(
+                            verdict=SubmissionVerdict.TIME_LIMIT_EXCEEDED,
+                            passed_test_count=passed_test_count,
+                            total_test_count=len(test_cases),
+                            failed_test_position=test_case.position,
+                            execution_time_ms=result.execution_time_ms,
+                            judge_log=f"Time limit exceeded on test case {test_case.position}.",
+                        )
+                        db.session.commit()
+                        return submission
+
+                    if result.status.value == "runtime_error":
+                        submission.finish(
+                            verdict=SubmissionVerdict.RUNTIME_ERROR,
+                            passed_test_count=passed_test_count,
+                            total_test_count=len(test_cases),
+                            failed_test_position=test_case.position,
+                            execution_time_ms=result.execution_time_ms,
+                            judge_log=_truncate_text(result.stderr or "Runtime error."),
+                        )
+                        db.session.commit()
+                        return submission
+
+                    actual_output = _normalize_output(result.stdout)
+                    expected_output = _normalize_output(test_case.expected_output)
+
+                    if actual_output != expected_output:
+                        submission.finish(
+                            verdict=SubmissionVerdict.WRONG_ANSWER,
+                            passed_test_count=passed_test_count,
+                            total_test_count=len(test_cases),
+                            failed_test_position=test_case.position,
+                            execution_time_ms=result.execution_time_ms,
+                            judge_log=f"Wrong answer on test case {test_case.position}.",
+                        )
+                        db.session.commit()
+                        return submission
+
+                    passed_test_count += 1
+
+            submission.finish(
+                verdict=SubmissionVerdict.ACCEPTED,
+                passed_test_count=passed_test_count,
+                total_test_count=len(test_cases),
+                execution_time_ms=max_execution_time_ms,
+                judge_log="Accepted.",
+            )
+            db.session.commit()
+            return submission
+
+        except Exception as error:
+            db.session.rollback()
+
+            submission = db.session.get(Submission, submission.id)
             if submission is None:
                 raise
 

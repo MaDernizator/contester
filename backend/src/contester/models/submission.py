@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 class SubmissionLanguage(StrEnum):
     PYTHON = "python"
+    CPP = "cpp"
 
 
 class SubmissionStatus(StrEnum):
@@ -31,6 +32,7 @@ class SubmissionVerdict(StrEnum):
     WRONG_ANSWER = "wrong_answer"
     RUNTIME_ERROR = "runtime_error"
     TIME_LIMIT_EXCEEDED = "time_limit_exceeded"
+    COMPILATION_ERROR = "compilation_error"
     INTERNAL_ERROR = "internal_error"
     NO_TESTS = "no_tests"
 

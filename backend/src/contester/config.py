@@ -47,6 +47,8 @@ class Settings:
     session_lifetime: timedelta
     judge_workspace_dir: Path
     max_source_code_length: int
+    cxx_compiler: str
+    cpp_compile_timeout_sec: int
     json_sort_keys: bool = False
 
     def to_mapping(self) -> dict[str, object]:
@@ -67,6 +69,8 @@ class Settings:
             "PERMANENT_SESSION_LIFETIME": self.session_lifetime,
             "JUDGE_WORKSPACE_DIR": self.judge_workspace_dir,
             "MAX_SOURCE_CODE_LENGTH": self.max_source_code_length,
+            "CXX_COMPILER": self.cxx_compiler,
+            "CPP_COMPILE_TIMEOUT_SEC": self.cpp_compile_timeout_sec,
         }
 
 
@@ -116,6 +120,14 @@ def get_settings(environment: str | None = None) -> Settings:
     if max_source_code_length < 1000:
         raise ValueError("MAX_SOURCE_CODE_LENGTH must be at least 1000.")
 
+    cpp_compile_timeout_sec = _read_int("CPP_COMPILE_TIMEOUT_SEC", 15)
+    if cpp_compile_timeout_sec < 1:
+        raise ValueError("CPP_COMPILE_TIMEOUT_SEC must be at least 1.")
+
+    cxx_compiler = os.getenv("CXX_COMPILER", "g++").strip()
+    if not cxx_compiler:
+        raise ValueError("CXX_COMPILER must not be empty.")
+
     return Settings(
         app_name=os.getenv("APP_NAME", "contester-backend"),
         environment=resolved_environment,
@@ -129,4 +141,6 @@ def get_settings(environment: str | None = None) -> Settings:
         session_lifetime=timedelta(hours=12),
         judge_workspace_dir=judge_workspace_dir,
         max_source_code_length=max_source_code_length,
+        cxx_compiler=cxx_compiler,
+        cpp_compile_timeout_sec=cpp_compile_timeout_sec,
     )

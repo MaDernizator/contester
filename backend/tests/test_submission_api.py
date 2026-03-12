@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import os
+import shutil
 from http import HTTPStatus
+
+import pytest
 
 from contester.extensions import db
 from contester.models.contest import Contest, ContestStatus
 from contester.models.problem import Problem, ProblemStatus
+from contester.models.submission import SubmissionVerdict
 from contester.models.test_case import TestCase as ProblemTestCase
 from contester.models.user import User, UserRole
+
+
+def _has_cpp_compiler() -> bool:
+    compiler = os.getenv("CXX_COMPILER", "g++")
+    return shutil.which(compiler) is not None
 
 
 def _create_user(*, username: str, password: str, role: UserRole) -> User:
@@ -167,6 +177,109 @@ def test_python_submission_gets_wrong_answer(client) -> None:
     assert payload is not None
     assert payload["submission"]["verdict"] == "wrong_answer"
     assert payload["submission"]["failed_test_position"] == 1
+
+
+@pytest.mark.skipif(not _has_cpp_compiler(), reason="C++ compiler is not available")
+def test_cpp_submission_is_accepted(client) -> None:
+    admin = _create_user(username="admin-submission-cpp-1", password="verystrong123", role=UserRole.ADMIN)
+    participant = _create_user(
+        username="participant-submission-cpp-1",
+        password="verystrong123",
+        role=UserRole.PARTICIPANT,
+    )
+
+    contest = _create_contest(
+        creator=admin,
+        title="Published Contest",
+        slug="submission-contest-cpp-accepted",
+        status=ContestStatus.PUBLISHED,
+    )
+    problem = _create_problem(
+        contest=contest,
+        code="A",
+        title="A + B",
+        position=1,
+        status=ProblemStatus.PUBLISHED,
+    )
+    _create_test_case(problem=problem, position=1, input_data="1 2\n", expected_output="3\n")
+    _create_test_case(problem=problem, position=2, input_data="8 11\n", expected_output="19\n")
+
+    _login(client, username=participant.username, password="verystrong123")
+
+    response = client.post(
+        "/api/v1/contests/submission-contest-cpp-accepted/problems/A/submissions",
+        json={
+            "language": "cpp",
+            "source_code": (
+                "#include <iostream>\n"
+                "int main() {\n"
+                "    long long a, b;\n"
+                "    std::cin >> a >> b;\n"
+                "    std::cout << (a + b) << '\\n';\n"
+                "    return 0;\n"
+                "}\n"
+            ),
+        },
+    )
+
+    assert response.status_code == HTTPStatus.CREATED
+    payload = response.get_json()
+    assert payload is not None
+    assert payload["submission"]["language"] == "cpp"
+    assert payload["submission"]["verdict"] == "accepted"
+    assert payload["submission"]["status"] == "finished"
+    assert payload["submission"]["passed_test_count"] == 2
+    assert payload["submission"]["total_test_count"] == 2
+
+
+@pytest.mark.skipif(not _has_cpp_compiler(), reason="C++ compiler is not available")
+def test_cpp_submission_returns_compilation_error(client) -> None:
+    admin = _create_user(username="admin-submission-cpp-2", password="verystrong123", role=UserRole.ADMIN)
+    participant = _create_user(
+        username="participant-submission-cpp-2",
+        password="verystrong123",
+        role=UserRole.PARTICIPANT,
+    )
+
+    contest = _create_contest(
+        creator=admin,
+        title="Published Contest",
+        slug="submission-contest-cpp-ce",
+        status=ContestStatus.PUBLISHED,
+    )
+    problem = _create_problem(
+        contest=contest,
+        code="A",
+        title="A + B",
+        position=1,
+        status=ProblemStatus.PUBLISHED,
+    )
+    _create_test_case(problem=problem, position=1, input_data="1 2\n", expected_output="3\n")
+
+    _login(client, username=participant.username, password="verystrong123")
+
+    response = client.post(
+        "/api/v1/contests/submission-contest-cpp-ce/problems/A/submissions",
+        json={
+            "language": "cpp",
+            "source_code": (
+                "#include <iostream>\n"
+                "int main() {\n"
+                "    std::cout << \"broken\" << std::endl\n"
+                "    return 0;\n"
+                "}\n"
+            ),
+        },
+    )
+
+    assert response.status_code == HTTPStatus.CREATED
+    payload = response.get_json()
+    assert payload is not None
+    assert payload["submission"]["language"] == "cpp"
+    assert payload["submission"]["verdict"] == SubmissionVerdict.COMPILATION_ERROR.value
+    assert payload["submission"]["status"] == "finished"
+    assert payload["submission"]["passed_test_count"] == 0
+    assert payload["submission"]["judge_log"]
 
 
 def test_submission_detail_is_restricted_for_other_participants(client) -> None:
