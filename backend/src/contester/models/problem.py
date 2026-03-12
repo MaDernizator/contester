@@ -12,6 +12,9 @@ from contester.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from contester.models.contest import Contest
+    from contester.models.submission import Submission
+    from contester.models.test_case import TestCase
+
 
 PROBLEM_CODE_PATTERN = re.compile(r"^[A-Z0-9]+(?:[-_][A-Z0-9]+)*$")
 
@@ -62,6 +65,15 @@ class Problem(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
     )
 
     contest: Mapped[Contest] = relationship(back_populates="problems")
+    test_cases: Mapped[list[TestCase]] = relationship(
+        back_populates="problem",
+        cascade="all, delete-orphan",
+        order_by="TestCase.position",
+    )
+    submissions: Mapped[list[Submission]] = relationship(
+        back_populates="problem",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return (
@@ -120,21 +132,21 @@ class Problem(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
 
     @classmethod
     def create(
-            cls,
-            *,
-            contest: Contest,
-            code: str,
-            title: str,
-            statement: str,
-            input_specification: str | None,
-            output_specification: str | None,
-            notes: str | None,
-            sample_input: str | None,
-            sample_output: str | None,
-            time_limit_ms: int,
-            memory_limit_mb: int,
-            position: int,
-            status: ProblemStatus,
+        cls,
+        *,
+        contest: Contest,
+        code: str,
+        title: str,
+        statement: str,
+        input_specification: str | None,
+        output_specification: str | None,
+        notes: str | None,
+        sample_input: str | None,
+        sample_output: str | None,
+        time_limit_ms: int,
+        memory_limit_mb: int,
+        position: int,
+        status: ProblemStatus,
     ) -> Self:
         cls.validate_limits(time_limit_ms=time_limit_ms, memory_limit_mb=memory_limit_mb)
         cls.validate_position(position)

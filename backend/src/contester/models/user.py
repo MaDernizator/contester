@@ -12,6 +12,7 @@ from contester.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from contester.models.contest import Contest
+    from contester.models.submission import Submission
 
 
 class UserRole(StrEnum):
@@ -43,6 +44,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
 
     created_contests: Mapped[list[Contest]] = relationship(back_populates="created_by")
+    submissions: Mapped[list[Submission]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"User(id={self.id!s}, username={self.username!r}, role={self.role.value!r})"
@@ -98,14 +103,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
 
     @classmethod
     def create(
-            cls,
-            *,
-            username: str,
-            password: str,
-            role: UserRole = UserRole.PARTICIPANT,
-            email: str | None = None,
-            full_name: str | None = None,
-            is_active: bool = True,
+        cls,
+        *,
+        username: str,
+        password: str,
+        role: UserRole = UserRole.PARTICIPANT,
+        email: str | None = None,
+        full_name: str | None = None,
+        is_active: bool = True,
     ) -> Self:
         user = cls(
             username=cls._normalize_username(username),

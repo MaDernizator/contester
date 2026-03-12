@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from flask import Flask
 
@@ -20,6 +21,8 @@ def create_app(environment: str | None = None) -> Flask:
 
     app = Flask(__name__)
     app.config.from_mapping(settings.to_mapping())
+
+    Path(app.config["JUDGE_WORKSPACE_DIR"]).mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
     migrate.init_app(app, db)

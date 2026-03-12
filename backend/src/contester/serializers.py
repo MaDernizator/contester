@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 from contester.models.contest import Contest
 from contester.models.problem import Problem
+from contester.models.submission import Submission
+from contester.models.test_case import TestCase
 from contester.models.user import User
 
 
@@ -25,16 +27,8 @@ def _serialize_optional_datetime(value: datetime | None) -> str | None:
 
 def _get_contest_phase(contest: Contest) -> str:
     now = datetime.now(timezone.utc)
-    starts_at = (
-        _ensure_utc_datetime(contest.starts_at)
-        if contest.starts_at is not None
-        else None
-    )
-    ends_at = (
-        _ensure_utc_datetime(contest.ends_at)
-        if contest.ends_at is not None
-        else None
-    )
+    starts_at = _ensure_utc_datetime(contest.starts_at) if contest.starts_at is not None else None
+    ends_at = _ensure_utc_datetime(contest.ends_at) if contest.ends_at is not None else None
 
     if ends_at is not None and now >= ends_at:
         return "finished"
@@ -120,4 +114,51 @@ def serialize_problem(problem: Problem) -> dict[str, object]:
         "sample_input": problem.sample_input,
         "sample_output": problem.sample_output,
         "contest": serialize_contest_summary(problem.contest),
+    }
+
+
+def serialize_test_case_summary(test_case: TestCase) -> dict[str, object]:
+    return {
+        "id": str(test_case.id),
+        "problem_id": str(test_case.problem_id),
+        "position": test_case.position,
+        "is_sample": test_case.is_sample,
+        "is_active": test_case.is_active,
+        "created_at": _serialize_datetime(test_case.created_at),
+        "updated_at": _serialize_datetime(test_case.updated_at),
+    }
+
+
+def serialize_test_case(test_case: TestCase) -> dict[str, object]:
+    return {
+        **serialize_test_case_summary(test_case),
+        "input_data": test_case.input_data,
+        "expected_output": test_case.expected_output,
+    }
+
+
+def serialize_submission_summary(submission: Submission) -> dict[str, object]:
+    return {
+        "id": str(submission.id),
+        "language": submission.language.value,
+        "status": submission.status.value,
+        "verdict": submission.verdict.value,
+        "passed_test_count": submission.passed_test_count,
+        "total_test_count": submission.total_test_count,
+        "failed_test_position": submission.failed_test_position,
+        "execution_time_ms": submission.execution_time_ms,
+        "created_at": _serialize_datetime(submission.created_at),
+        "updated_at": _serialize_datetime(submission.updated_at),
+        "judged_at": _serialize_optional_datetime(submission.judged_at),
+        "problem": serialize_problem_summary(submission.problem),
+    }
+
+
+def serialize_submission(submission: Submission) -> dict[str, object]:
+    return {
+        **serialize_submission_summary(submission),
+        "source_code": submission.source_code,
+        "judge_log": submission.judge_log,
+        "user": serialize_user_summary(submission.user),
+        "contest": serialize_contest_summary(submission.problem.contest),
     }

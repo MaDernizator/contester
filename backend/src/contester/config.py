@@ -22,6 +22,17 @@ def _read_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _read_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    try:
+        return int(value)
+    except ValueError as error:
+        raise ValueError(f"Environment variable {name!r} must be an integer.") from error
+
+
 @dataclass(slots=True)
 class Settings:
     app_name: str
@@ -34,6 +45,8 @@ class Settings:
     sqlalchemy_engine_options: dict[str, object]
     session_cookie_secure: bool
     session_lifetime: timedelta
+    judge_workspace_dir: Path
+    max_source_code_length: int
     json_sort_keys: bool = False
 
     def to_mapping(self) -> dict[str, object]:
@@ -52,6 +65,8 @@ class Settings:
             "SESSION_COOKIE_SAMESITE": "Lax",
             "SESSION_COOKIE_SECURE": self.session_cookie_secure,
             "PERMANENT_SESSION_LIFETIME": self.session_lifetime,
+            "JUDGE_WORKSPACE_DIR": self.judge_workspace_dir,
+            "MAX_SOURCE_CODE_LENGTH": self.max_source_code_length,
         }
 
 
@@ -81,6 +96,7 @@ def get_settings(environment: str | None = None) -> Settings:
                 "check_same_thread": False,
             },
         }
+        judge_workspace_dir = BACKEND_ROOT / ".runtime" / "judge-testing"
     else:
         database_uri = os.getenv(
             "DATABASE_URL",
@@ -89,6 +105,16 @@ def get_settings(environment: str | None = None) -> Settings:
         sqlalchemy_engine_options = {
             "pool_pre_ping": True,
         }
+        workspace_from_env = os.getenv("JUDGE_WORKSPACE_DIR", "").strip()
+        judge_workspace_dir = (
+            Path(workspace_from_env)
+            if workspace_from_env
+            else BACKEND_ROOT / ".runtime" / "judge"
+        )
+
+    max_source_code_length = _read_int("MAX_SOURCE_CODE_LENGTH", 100000)
+    if max_source_code_length < 1000:
+        raise ValueError("MAX_SOURCE_CODE_LENGTH must be at least 1000.")
 
     return Settings(
         app_name=os.getenv("APP_NAME", "contester-backend"),
@@ -101,4 +127,6 @@ def get_settings(environment: str | None = None) -> Settings:
         sqlalchemy_engine_options=sqlalchemy_engine_options,
         session_cookie_secure=resolved_environment == "production",
         session_lifetime=timedelta(hours=12),
+        judge_workspace_dir=judge_workspace_dir,
+        max_source_code_length=max_source_code_length,
     )

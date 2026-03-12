@@ -72,10 +72,14 @@ def read_required_int(
         raise BadRequest(f"Field {field_name!r} must be an integer.")
 
     if min_value is not None and value < min_value:
-        raise BadRequest(f"Field {field_name!r} must be greater than or equal to {min_value}.")
+        raise BadRequest(
+            f"Field {field_name!r} must be greater than or equal to {min_value}."
+        )
 
     if max_value is not None and value > max_value:
-        raise BadRequest(f"Field {field_name!r} must be less than or equal to {max_value}.")
+        raise BadRequest(
+            f"Field {field_name!r} must be less than or equal to {max_value}."
+        )
 
     return value
 
@@ -95,10 +99,25 @@ def read_optional_int(
         raise BadRequest(f"Field {field_name!r} must be an integer or null.")
 
     if min_value is not None and value < min_value:
-        raise BadRequest(f"Field {field_name!r} must be greater than or equal to {min_value}.")
+        raise BadRequest(
+            f"Field {field_name!r} must be greater than or equal to {min_value}."
+        )
 
     if max_value is not None and value > max_value:
-        raise BadRequest(f"Field {field_name!r} must be less than or equal to {max_value}.")
+        raise BadRequest(
+            f"Field {field_name!r} must be less than or equal to {max_value}."
+        )
+
+    return value
+
+
+def read_optional_bool(payload: dict[str, object], field_name: str) -> bool | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+
+    if not isinstance(value, bool):
+        raise BadRequest(f"Field {field_name!r} must be a boolean or null.")
 
     return value
 
