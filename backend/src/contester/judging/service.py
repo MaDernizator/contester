@@ -11,12 +11,16 @@ from contester.judging.python_runner import (
     PythonExecutionStatus,
     PythonRunner,
 )
+from contester.models.problem import Problem
 from contester.models.submission import Submission, SubmissionVerdict
 from contester.models.test_case import TestCase
 
 
 def _normalize_output(output: str) -> str:
-    normalized_lines = [line.rstrip() for line in output.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    normalized_lines = [
+        line.rstrip()
+        for line in output.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
 
     while normalized_lines and normalized_lines[-1] == "":
         normalized_lines.pop()
@@ -40,7 +44,7 @@ class JudgeService:
             select(Submission)
             .options(
                 selectinload(Submission.user),
-                selectinload(Submission.problem).selectinload("contest"),
+                selectinload(Submission.problem).selectinload(Problem.contest),
             )
             .where(Submission.id == submission_id)
         )
@@ -83,7 +87,10 @@ class JudgeService:
                         time_limit_ms=submission.problem.time_limit_ms,
                         workspace_dir=workspace_dir,
                     )
-                    max_execution_time_ms = max(max_execution_time_ms, result.execution_time_ms)
+                    max_execution_time_ms = max(
+                        max_execution_time_ms,
+                        result.execution_time_ms,
+                    )
 
                     if result.status == PythonExecutionStatus.TIME_LIMIT_EXCEEDED:
                         submission.finish(

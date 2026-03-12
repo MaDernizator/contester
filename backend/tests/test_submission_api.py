@@ -5,7 +5,7 @@ from http import HTTPStatus
 from contester.extensions import db
 from contester.models.contest import Contest, ContestStatus
 from contester.models.problem import Problem, ProblemStatus
-from contester.models.test_case import TestCase
+from contester.models.test_case import TestCase as ProblemTestCase
 from contester.models.user import User, UserRole
 
 
@@ -66,8 +66,8 @@ def _create_test_case(
     position: int,
     input_data: str,
     expected_output: str,
-) -> TestCase:
-    test_case = TestCase.create(
+) -> ProblemTestCase:
+    test_case = ProblemTestCase.create(
         problem=problem,
         position=position,
         input_data=input_data,
