@@ -10,6 +10,7 @@ from contester.api.auth import auth_blueprint
 from contester.api.contests import contests_blueprint
 from contester.api.health import health_blueprint
 from contester.api.problems import problems_blueprint
+from contester.api.standings import standings_blueprint
 from contester.api.submissions import submissions_blueprint
 
 
@@ -24,4 +25,5 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(admin_test_cases_blueprint, url_prefix=api_prefix)
     app.register_blueprint(contests_blueprint, url_prefix=api_prefix)
     app.register_blueprint(problems_blueprint, url_prefix=api_prefix)
+    app.register_blueprint(standings_blueprint, url_prefix=api_prefix)
     app.register_blueprint(submissions_blueprint, url_prefix=api_prefix)

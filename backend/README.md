@@ -54,6 +54,7 @@ GET   /api/v1/contests
 GET   /api/v1/contests/<slug>
 GET   /api/v1/contests/<slug>/problems
 GET   /api/v1/contests/<slug>/problems/<problem_code>
+GET   /api/v1/contests/<slug>/standings
 
 POST  /api/v1/contests/<slug>/problems/<problem_code>/submissions
 GET   /api/v1/submissions
@@ -73,5 +74,7 @@ Source code is sent as JSON field source_code.
 The current judge implementation is synchronous and executes Python locally from the backend process.
 
 The runner layer is isolated in a separate module so it can be replaced with Docker-based execution later.
+
+Standings are calculated in ICPC-like style using contest starts_at as the reference point. If starts_at is absent, contest created_at is used as a fallback.
 
 If you run backend locally against Docker PostgreSQL on a custom host port, set DATABASE_URL in backend/.env accordingly.
