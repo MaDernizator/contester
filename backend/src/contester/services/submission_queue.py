@@ -23,6 +23,7 @@ class SubmissionQueueService:
         docker_image: str,
         cxx_compiler: str,
         cpp_compile_timeout_sec: int,
+        running_timeout_sec: int,
     ) -> None:
         self.judge_service = JudgeService(
             workspace_root,
@@ -32,6 +33,7 @@ class SubmissionQueueService:
             cxx_compiler=cxx_compiler,
             cpp_compile_timeout_sec=cpp_compile_timeout_sec,
         )
+        self.running_timeout_sec = running_timeout_sec
 
     @classmethod
     def from_app_config(cls) -> "SubmissionQueueService":
@@ -42,6 +44,9 @@ class SubmissionQueueService:
             docker_image=current_app.config["JUDGE_DOCKER_IMAGE"],
             cxx_compiler=current_app.config["CXX_COMPILER"],
             cpp_compile_timeout_sec=current_app.config["CPP_COMPILE_TIMEOUT_SEC"],
+            running_timeout_sec=int(
+                current_app.config["JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC"]
+            ),
         )
 
     def claim_next_pending_submission_id(self) -> UUID | None:
@@ -61,8 +66,9 @@ class SubmissionQueueService:
         db.session.commit()
         return submission.id
 
-    def requeue_stale_running_submissions(self, *, timeout_sec: int) -> int:
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_sec)
+    def requeue_stale_running_submissions(self, *, timeout_sec: int | None = None) -> int:
+        effective_timeout_sec = timeout_sec or self.running_timeout_sec
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=effective_timeout_sec)
 
         statement = (
             select(Submission)
@@ -93,7 +99,7 @@ class SubmissionQueueService:
         self.judge_service.judge_submission(submission_id)
         return True
 
-    def run_once(self, *, running_timeout_sec: int) -> int:
+    def run_once(self, *, running_timeout_sec: int | None = None) -> int:
         self.requeue_stale_running_submissions(timeout_sec=running_timeout_sec)
 
         processed = 0
@@ -106,7 +112,7 @@ class SubmissionQueueService:
         self,
         *,
         poll_interval_sec: int,
-        running_timeout_sec: int,
+        running_timeout_sec: int | None = None,
     ) -> None:
         while True:
             recovered = self.requeue_stale_running_submissions(
