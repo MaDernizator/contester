@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import UUID
 
 from flask import current_app
 from sqlalchemy import select
@@ -42,33 +44,75 @@ class SubmissionQueueService:
             cpp_compile_timeout_sec=current_app.config["CPP_COMPILE_TIMEOUT_SEC"],
         )
 
-    def fetch_next_pending_submission_id(self):
+    def claim_next_pending_submission_id(self) -> UUID | None:
         statement = (
-            select(Submission.id)
+            select(Submission)
             .where(Submission.status == SubmissionStatus.PENDING)
             .order_by(Submission.created_at.asc(), Submission.id.asc())
+            .with_for_update(skip_locked=True)
             .limit(1)
         )
-        return db.session.scalar(statement)
+
+        submission = db.session.execute(statement).scalars().first()
+        if submission is None:
+            return None
+
+        submission.mark_running(total_test_count=0)
+        db.session.commit()
+        return submission.id
+
+    def requeue_stale_running_submissions(self, *, timeout_sec: int) -> int:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_sec)
+
+        statement = (
+            select(Submission)
+            .where(
+                Submission.status == SubmissionStatus.RUNNING,
+                Submission.updated_at < cutoff,
+            )
+            .order_by(Submission.updated_at.asc(), Submission.id.asc())
+        )
+
+        stale_submissions = db.session.execute(statement).scalars().all()
+        if not stale_submissions:
+            return 0
+
+        for submission in stale_submissions:
+            submission.requeue(
+                judge_log="Submission was re-queued after stale running timeout."
+            )
+
+        db.session.commit()
+        return len(stale_submissions)
 
     def process_next_submission(self) -> bool:
-        submission_id = self.fetch_next_pending_submission_id()
+        submission_id = self.claim_next_pending_submission_id()
         if submission_id is None:
             return False
 
         self.judge_service.judge_submission(submission_id)
         return True
 
-    def run_once(self) -> int:
-        processed = 0
+    def run_once(self, *, running_timeout_sec: int) -> int:
+        self.requeue_stale_running_submissions(timeout_sec=running_timeout_sec)
 
+        processed = 0
         while self.process_next_submission():
             processed += 1
 
         return processed
 
-    def run_forever(self, *, poll_interval_sec: int) -> None:
+    def run_forever(
+        self,
+        *,
+        poll_interval_sec: int,
+        running_timeout_sec: int,
+    ) -> None:
         while True:
+            recovered = self.requeue_stale_running_submissions(
+                timeout_sec=running_timeout_sec
+            )
             processed_any = self.process_next_submission()
-            if not processed_any:
+
+            if not processed_any and recovered == 0:
                 time.sleep(poll_interval_sec)

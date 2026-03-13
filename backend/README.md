@@ -1,198 +1,150 @@
-from __future__ import annotations
+# Contester Backend
 
-from datetime import datetime, timedelta, timezone
-from http import HTTPStatus
+Backend API for the local contest management system.
 
-from contester.extensions import db
-from contester.models.contest import Contest, ContestStatus
-from contester.models.problem import Problem, ProblemStatus
-from contester.models.submission import (
-    Submission,
-    SubmissionLanguage,
-    SubmissionStatus,
-    SubmissionVerdict,
-)
-from contester.models.user import User, UserRole
+## Local development
 
+1. Start PostgreSQL:
 
-def _create_user(*, username: str, password: str, role: UserRole) -> User:
-    user = User.create(username=username, password=password, role=role)
-    db.session.add(user)
-    db.session.commit()
-    return user
+```bash
+docker compose up -d db
 
+Install dependencies:
 
-def _create_contest(*, creator: User, title: str, slug: str, status: ContestStatus) -> Contest:
-    contest = Contest.create(
-        title=title,
-        slug=slug,
-        description="Contest description",
-        starts_at=None,
-        ends_at=None,
-        status=status,
-        created_by=creator,
-    )
-    db.session.add(contest)
-    db.session.commit()
-    return contest
+cd backend
+python -m pip install -e ".[dev]"
 
+Apply migrations:
 
-def _create_problem(
-    *,
-    contest: Contest,
-    code: str,
-    title: str,
-    position: int,
-    status: ProblemStatus,
-) -> Problem:
-    problem = Problem.create(
-        contest=contest,
-        code=code,
-        title=title,
-        statement="Solve the problem.",
-        input_specification="Input spec",
-        output_specification="Output spec",
-        notes=None,
-        sample_input="1 2",
-        sample_output="3",
-        time_limit_ms=1000,
-        memory_limit_mb=128,
-        position=position,
-        status=status,
-    )
-    db.session.add(problem)
-    db.session.commit()
-    return problem
+flask --app wsgi db upgrade
 
+Run tests:
 
-def _create_submission(
-    *,
-    user: User,
-    problem: Problem,
-    status: SubmissionStatus,
-    verdict: SubmissionVerdict,
-    created_at: datetime,
-) -> Submission:
-    submission = Submission.create(
-        user=user,
-        problem=problem,
-        language=SubmissionLanguage.PYTHON,
-        source_code="print('ok')\n",
-    )
-    db.session.add(submission)
-    db.session.flush()
+pytest
 
-    submission.created_at = created_at
-    submission.updated_at = created_at
-    submission.status = status
-    submission.verdict = verdict
+Start the application:
 
-    if status == SubmissionStatus.FINISHED:
-        submission.passed_test_count = 1 if verdict == SubmissionVerdict.ACCEPTED else 0
-        submission.total_test_count = 1
-        submission.judged_at = created_at
-    else:
-        submission.passed_test_count = 0
-        submission.total_test_count = 0
-        submission.judged_at = None
+python -m contester.app
+Create first admin
+flask --app wsgi create-admin
+Run judge worker
 
-    db.session.commit()
-    return submission
+Process all pending submissions once:
 
+flask --app wsgi run-judge-worker --once
 
-def _login(client, *, username: str, password: str) -> None:
-    response = client.post(
-        "/api/v1/auth/login",
-        json={"username": username, "password": password},
-    )
-    assert response.status_code == HTTPStatus.OK
+Run worker in polling mode:
 
+flask --app wsgi run-judge-worker
+Main endpoints
+GET   /api/v1/health
+POST  /api/v1/auth/register
+POST  /api/v1/auth/login
+POST  /api/v1/auth/logout
+GET   /api/v1/auth/me
+GET   /api/v1/admin/session
 
-def test_queue_monitoring_requires_authentication(client) -> None:
-    response = client.get("/api/v1/admin/submissions/queue")
+GET   /api/v1/admin/contests
+POST  /api/v1/admin/contests
+GET   /api/v1/admin/contests/<contest_id>
+PATCH /api/v1/admin/contests/<contest_id>
 
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
-    assert response.get_json()["error"]["code"] == "unauthorized"
+GET   /api/v1/admin/contests/<contest_id>/problems
+POST  /api/v1/admin/contests/<contest_id>/problems
+GET   /api/v1/admin/problems/<problem_id>
+PATCH /api/v1/admin/problems/<problem_id>
 
+GET   /api/v1/admin/problems/<problem_id>/test-cases
+POST  /api/v1/admin/problems/<problem_id>/test-cases
+GET   /api/v1/admin/test-cases/<test_case_id>
+PATCH /api/v1/admin/test-cases/<test_case_id>
 
-def test_queue_monitoring_rejects_participant(client) -> None:
-    participant = _create_user(
-        username="participant-queue-1",
-        password="verystrong123",
-        role=UserRole.PARTICIPANT,
-    )
-    _login(client, username=participant.username, password="verystrong123")
+GET   /api/v1/admin/submissions/queue
 
-    response = client.get("/api/v1/admin/submissions/queue")
+GET   /api/v1/contests
+GET   /api/v1/contests/<slug>
+GET   /api/v1/contests/<slug>/problems
+GET   /api/v1/contests/<slug>/problems/<problem_code>
+GET   /api/v1/contests/<slug>/standings
 
-    assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.get_json()["error"]["code"] == "forbidden"
+POST  /api/v1/contests/<slug>/problems/<problem_code>/submissions
+GET   /api/v1/submissions
+GET   /api/v1/submissions/<submission_id>
+Judge backends
 
+Two execution backends are supported:
 
-def test_admin_queue_monitoring_returns_correct_counts(client) -> None:
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+local — default, executes Python/C++ directly from the worker process.
 
-    admin = _create_user(username="admin-queue-1", password="verystrong123", role=UserRole.ADMIN)
-    participant = _create_user(
-        username="participant-queue-2",
-        password="verystrong123",
-        role=UserRole.PARTICIPANT,
-    )
+docker — runs Python/C++ inside an isolated Docker container.
 
-    contest = _create_contest(
-        creator=admin,
-        title="Queue Contest",
-        slug="queue-contest",
-        status=ContestStatus.PUBLISHED,
-    )
-    problem = _create_problem(
-        contest=contest,
-        code="A",
-        title="A + B",
-        position=1,
-        status=ProblemStatus.PUBLISHED,
-    )
+Queue model
 
-    oldest_pending = _create_submission(
-        user=participant,
-        problem=problem,
-        status=SubmissionStatus.PENDING,
-        verdict=SubmissionVerdict.PENDING,
-        created_at=now,
-    )
-    _create_submission(
-        user=participant,
-        problem=problem,
-        status=SubmissionStatus.PENDING,
-        verdict=SubmissionVerdict.PENDING,
-        created_at=now + timedelta(minutes=1),
-    )
-    _create_submission(
-        user=participant,
-        problem=problem,
-        status=SubmissionStatus.RUNNING,
-        verdict=SubmissionVerdict.PENDING,
-        created_at=now + timedelta(minutes=2),
-    )
-    _create_submission(
-        user=participant,
-        problem=problem,
-        status=SubmissionStatus.FINISHED,
-        verdict=SubmissionVerdict.ACCEPTED,
-        created_at=now + timedelta(minutes=3),
-    )
+Submissions are processed asynchronously:
 
-    _login(client, username=admin.username, password="verystrong123")
+API creates submission and returns 202 Accepted
 
-    response = client.get("/api/v1/admin/submissions/queue")
+submission starts in pending
 
-    assert response.status_code == HTTPStatus.OK
-    payload = response.get_json()
-    assert payload is not None
+judge worker safely claims the oldest pending submission
 
-    queue = payload["queue"]
-    assert queue["pending_count"] == 2
-    assert queue["running_count"] == 1
-    assert queue["finished_count"] == 1
-    assert queue["oldest_pending_submission_id"] == str(oldest_pending.id)
-    assert queue["oldest_pending_created_at"].endswith("Z")
+claimed submission is immediately moved to running
+
+stale running submissions are automatically re-queued after timeout
+
+The timeout is controlled by:
+
+JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC=300
+Docker Compose deployment
+
+The repository root docker-compose.yml starts:
+
+db
+
+backend
+
+judge-worker
+
+Start everything:
+
+docker compose up --build
+
+The PostgreSQL host port is mapped to 55432.
+
+Enable Docker judge backend
+
+Build the judge image from the repository root:
+
+docker build -t contester-judge:local -f infra/judge/Dockerfile infra/judge
+
+In backend/.env, enable Docker backend:
+
+JUDGE_EXECUTION_BACKEND=docker
+JUDGE_DOCKER_BINARY=docker
+JUDGE_DOCKER_IMAGE=contester-judge:local
+
+Restart backend and worker.
+
+Notes
+
+Participants register via the public API.
+
+Admin accounts are created only via CLI.
+
+Authentication is session-based.
+
+Participants can view only published contests and published problems of published contests.
+
+Source code is sent as JSON field source_code.
+
+Supported submission languages: python, cpp.
+
+The runner layer is isolated in separate modules so it can be swapped between local and Docker execution backends.
+
+Docker backend is intended primarily for host-based backend execution. If backend itself runs inside a container, Docker CLI/socket access must be configured separately.
+
+For C++ support, a compiler such as g++ must be available in PATH, or CXX_COMPILER must point to it explicitly when using the local backend.
+
+Standings are calculated in ICPC-like style using contest starts_at as the reference point. If starts_at is absent, contest created_at is used as a fallback.
+
+If you run backend locally against Docker PostgreSQL on a custom host port, set DATABASE_URL in backend/.env accordingly.

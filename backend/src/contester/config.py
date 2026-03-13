@@ -54,6 +54,7 @@ class Settings:
     judge_docker_binary: str
     judge_docker_image: str
     judge_poll_interval_sec: int
+    judge_running_submission_timeout_sec: int
     json_sort_keys: bool = False
 
     def to_mapping(self) -> dict[str, object]:
@@ -80,6 +81,7 @@ class Settings:
             "JUDGE_DOCKER_BINARY": self.judge_docker_binary,
             "JUDGE_DOCKER_IMAGE": self.judge_docker_image,
             "JUDGE_POLL_INTERVAL_SEC": self.judge_poll_interval_sec,
+            "JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC": self.judge_running_submission_timeout_sec,
         }
 
 
@@ -157,6 +159,13 @@ def get_settings(environment: str | None = None) -> Settings:
     if judge_poll_interval_sec < 1:
         raise ValueError("JUDGE_POLL_INTERVAL_SEC must be at least 1.")
 
+    judge_running_submission_timeout_sec = _read_int(
+        "JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC",
+        300,
+    )
+    if judge_running_submission_timeout_sec < 1:
+        raise ValueError("JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC must be at least 1.")
+
     return Settings(
         app_name=os.getenv("APP_NAME", "contester-backend"),
         environment=resolved_environment,
@@ -176,4 +185,5 @@ def get_settings(environment: str | None = None) -> Settings:
         judge_docker_binary=judge_docker_binary,
         judge_docker_image=judge_docker_image,
         judge_poll_interval_sec=judge_poll_interval_sec,
+        judge_running_submission_timeout_sec=judge_running_submission_timeout_sec,
     )

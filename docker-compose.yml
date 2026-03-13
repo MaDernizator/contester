@@ -34,6 +34,7 @@ services:
       CXX_COMPILER: g++
       CPP_COMPILE_TIMEOUT_SEC: 15
       JUDGE_POLL_INTERVAL_SEC: 2
+      JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: 300
     command: >
       sh -c "flask --app wsgi db upgrade &&
              python -m contester.app"
@@ -69,6 +70,7 @@ services:
       CXX_COMPILER: g++
       CPP_COMPILE_TIMEOUT_SEC: 15
       JUDGE_POLL_INTERVAL_SEC: 2
+      JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: 300
     command: ["flask", "--app", "wsgi", "run-judge-worker"]
     restart: unless-stopped
 

@@ -143,6 +143,16 @@ class Submission(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
         self.judge_log = None
         self.judged_at = None
 
+    def requeue(self, *, judge_log: str | None = None) -> None:
+        self.status = SubmissionStatus.PENDING
+        self.verdict = SubmissionVerdict.PENDING
+        self.total_test_count = 0
+        self.passed_test_count = 0
+        self.failed_test_position = None
+        self.execution_time_ms = None
+        self.judge_log = judge_log
+        self.judged_at = None
+
     def finish(
         self,
         *,
