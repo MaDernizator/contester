@@ -77,7 +77,9 @@ The current judge implementation is synchronous and executes Python/C++ locally 
 
 The runner layer is isolated in separate modules so it can be replaced with Docker-based execution later.
 
-For C++ support, a compiler such as g++ must be available in PATH, or CXX_COMPILER must point to it explicitly.
+For C++ support, the backend currently supports both g++-style compilers and MSVC-style cl.
+
+If cl is used on Windows, run the backend from a Developer Command Prompt / Developer PowerShell so the compiler and standard library environment are initialized correctly.
 
 Standings are calculated in ICPC-like style using contest starts_at as the reference point. If starts_at is absent, contest created_at is used as a fallback.
 

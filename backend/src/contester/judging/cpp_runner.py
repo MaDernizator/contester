@@ -39,6 +39,38 @@ class CppExecutionResult:
 
 
 class CppRunner:
+    @staticmethod
+    def _is_msvc_like_compiler(compiler: str) -> bool:
+        compiler_name = Path(compiler).name.lower()
+        return compiler_name in {"cl", "cl.exe", "clang-cl", "clang-cl.exe"}
+
+    def _build_compile_command(
+        self,
+        *,
+        compiler: str,
+        source_path: Path,
+        binary_path: Path,
+    ) -> list[str]:
+        if self._is_msvc_like_compiler(compiler):
+            return [
+                compiler,
+                "/nologo",
+                "/std:c++17",
+                "/EHsc",
+                "/O2",
+                f"/Fe:{binary_path.name}",
+                source_path.name,
+            ]
+
+        return [
+            compiler,
+            "-std=c++17",
+            "-O2",
+            "-o",
+            str(binary_path),
+            str(source_path),
+        ]
+
     def compile(
         self,
         *,
@@ -53,14 +85,11 @@ class CppRunner:
 
         source_path.write_text(source_code, encoding="utf-8")
 
-        command = [
-            compiler,
-            "-std=c++17",
-            "-O2",
-            "-o",
-            str(binary_path),
-            str(source_path),
-        ]
+        command = self._build_compile_command(
+            compiler=compiler,
+            source_path=source_path,
+            binary_path=binary_path,
+        )
 
         started_at = time.monotonic()
 
@@ -113,6 +142,18 @@ class CppRunner:
                 compile_time_ms=compile_time_ms,
                 stdout=completed.stdout,
                 stderr=completed.stderr,
+                binary_path=None,
+            )
+
+        if not binary_path.exists():
+            return CppCompilationResult(
+                status=CppCompilationStatus.INTERNAL_ERROR,
+                compile_time_ms=compile_time_ms,
+                stdout=completed.stdout,
+                stderr=(
+                    completed.stderr
+                    + "\nCompilation succeeded but the executable artifact was not found."
+                ).strip(),
                 binary_path=None,
             )
 
