@@ -30,8 +30,47 @@ services:
       DATABASE_URL: postgresql+psycopg://contester:contester@db:5432/contester
       FLASK_RUN_HOST: 0.0.0.0
       FLASK_RUN_PORT: 8000
+      JUDGE_EXECUTION_BACKEND: local
+      CXX_COMPILER: g++
+      CPP_COMPILE_TIMEOUT_SEC: 15
+      JUDGE_POLL_INTERVAL_SEC: 2
+    command: >
+      sh -c "flask --app wsgi db upgrade &&
+             python -m contester.app"
     ports:
       - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  judge-worker:
+    build:
+      context: ./backend
+    container_name: contester-judge-worker
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      APP_NAME: contester-backend
+      SECRET_KEY: local-dev-secret-key
+      DATABASE_URL: postgresql+psycopg://contester:contester@db:5432/contester
+      JUDGE_EXECUTION_BACKEND: local
+      CXX_COMPILER: g++
+      CPP_COMPILE_TIMEOUT_SEC: 15
+      JUDGE_POLL_INTERVAL_SEC: 2
+    command: ["flask", "--app", "wsgi", "run-judge-worker"]
+    restart: unless-stopped
 
 volumes:
   contester_postgres_data:
