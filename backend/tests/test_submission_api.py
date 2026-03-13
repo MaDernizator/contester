@@ -6,6 +6,7 @@ from http import HTTPStatus
 
 import pytest
 
+from uuid import UUID
 from contester.extensions import db
 from contester.models.contest import Contest, ContestStatus
 from contester.models.problem import Problem, ProblemStatus
@@ -43,13 +44,13 @@ def _create_contest(*, creator: User, title: str, slug: str, status: ContestStat
 
 
 def _create_problem(
-    *,
-    contest: Contest,
-    code: str,
-    title: str,
-    position: int,
-    status: ProblemStatus,
-    time_limit_ms: int = 1000,
+        *,
+        contest: Contest,
+        code: str,
+        title: str,
+        position: int,
+        status: ProblemStatus,
+        time_limit_ms: int = 1000,
 ) -> Problem:
     problem = Problem.create(
         contest=contest,
@@ -72,11 +73,11 @@ def _create_problem(
 
 
 def _create_test_case(
-    *,
-    problem: Problem,
-    position: int,
-    input_data: str,
-    expected_output: str,
+        *,
+        problem: Problem,
+        position: int,
+        input_data: str,
+        expected_output: str,
 ) -> ProblemTestCase:
     test_case = ProblemTestCase.create(
         problem=problem,
@@ -461,7 +462,7 @@ def test_created_submission_starts_in_pending_state(client, app) -> None:
     )
 
     assert response.status_code == HTTPStatus.ACCEPTED
-    submission_id = response.get_json()["submission"]["id"]
+    submission_id = UUID(response.get_json()["submission"]["id"])
 
     with app.app_context():
         submission = db.session.get(Submission, submission_id)
