@@ -32,7 +32,11 @@ export function SubmissionsPanel() {
     <Panel
       title="My submissions"
       actions={
-        <button type="button" className="button button--secondary" onClick={() => void loadSubmissions()}>
+        <button
+          type="button"
+          className="button button--secondary"
+          onClick={() => void loadSubmissions()}
+        >
           Refresh
         </button>
       }
@@ -52,7 +56,7 @@ export function SubmissionsPanel() {
                 <div>
                   <strong>
                     <Link
-                      to={`/contests/${submission.problem.contest_id}/problems/${submission.problem.code}`}
+                      to={`/contests/${submission.contest.slug}/problems/${submission.problem.code}`}
                       className="inline-link"
                     >
                       {submission.problem.code} — {submission.problem.title}

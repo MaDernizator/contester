@@ -5,10 +5,11 @@ import {
   createAdminTestCase,
   getAdminContests,
   getAdminProblems,
+  getAdminQueueStatus,
   getAdminTestCases,
   isApiError,
 } from "../../api/client";
-import type { Contest, ProblemSummary, TestCaseSummary } from "../../api/types";
+import type { Contest, ProblemSummary, QueueStatus, TestCaseSummary } from "../../api/types";
 import { Panel } from "../../components/Panel";
 import { StatusPill } from "../../components/StatusPill";
 
@@ -76,12 +77,21 @@ const initialTestCaseForm: TestCaseFormState = {
   is_active: true,
 };
 
+const initialQueueStatus: QueueStatus = {
+  pending_count: 0,
+  running_count: 0,
+  finished_count: 0,
+  oldest_pending_submission_id: null,
+  oldest_pending_created_at: null,
+};
+
 export function AdminTools() {
   const [contests, setContests] = useState<Contest[]>([]);
   const [selectedContestId, setSelectedContestId] = useState("");
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [selectedProblemId, setSelectedProblemId] = useState("");
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([]);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus>(initialQueueStatus);
   const [contestForm, setContestForm] = useState(initialContestForm);
   const [problemForm, setProblemForm] = useState(initialProblemForm);
   const [testCaseForm, setTestCaseForm] = useState(initialTestCaseForm);
@@ -99,6 +109,11 @@ export function AdminTools() {
     () => problems.find((problem) => problem.id === selectedProblemId) ?? null,
     [problems, selectedProblemId],
   );
+
+  async function loadQueueStatus() {
+    const queue = await getAdminQueueStatus();
+    setQueueStatus(queue);
+  }
 
   async function loadContests() {
     const contestItems = await getAdminContests();
@@ -152,7 +167,7 @@ export function AdminTools() {
     setErrorMessage(null);
 
     try {
-      await loadContests();
+      await Promise.all([loadContests(), loadQueueStatus()]);
     } catch (error) {
       setErrorMessage(isApiError(error) ? error.message : "Failed to load admin data.");
     } finally {
@@ -292,11 +307,48 @@ export function AdminTools() {
   }
 
   if (loading) {
-    return <Panel title="Admin tools"><p className="muted">Loading admin data...</p></Panel>;
+    return (
+      <Panel title="Admin tools">
+        <p className="muted">Loading admin data...</p>
+      </Panel>
+    );
   }
 
   return (
     <div className="stack">
+      <Panel
+        title="Queue monitor"
+        actions={
+          <button
+            type="button"
+            className="button button--secondary"
+            onClick={() => void loadQueueStatus()}
+          >
+            Refresh queue
+          </button>
+        }
+      >
+        <div className="meta-grid">
+          <span>Pending: {queueStatus.pending_count}</span>
+          <span>Running: {queueStatus.running_count}</span>
+          <span>Finished: {queueStatus.finished_count}</span>
+          <span>
+            Oldest pending:{" "}
+            {queueStatus.oldest_pending_created_at
+              ? new Date(queueStatus.oldest_pending_created_at).toLocaleString()
+              : "—"}
+          </span>
+        </div>
+
+        {queueStatus.oldest_pending_submission_id ? (
+          <p className="muted small-text">
+            Oldest pending submission ID: {queueStatus.oldest_pending_submission_id}
+          </p>
+        ) : (
+          <p className="muted small-text">Queue is empty right now.</p>
+        )}
+      </Panel>
+
       <Panel title="Admin tools">
         <p className="muted">
           This section is intentionally simple. It exists to speed up local manual testing.

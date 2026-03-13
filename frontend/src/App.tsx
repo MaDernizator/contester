@@ -6,6 +6,7 @@ import { PageShell } from "./components/PageShell";
 import { ContestPage } from "./pages/ContestPage";
 import { HomePage } from "./pages/HomePage";
 import { ProblemPage } from "./pages/ProblemPage";
+import { StandingsPage } from "./pages/StandingsPage";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -61,6 +62,10 @@ export default function App() {
           <Route
             path="/contests/:contestSlug/problems/:problemCode"
             element={<ProblemPage user={user} />}
+          />
+          <Route
+            path="/contests/:contestSlug/standings"
+            element={<StandingsPage user={user} />}
           />
         </Routes>
       </PageShell>

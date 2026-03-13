@@ -1,7 +1,9 @@
 import type {
   Contest,
+  ContestStandings,
   Problem,
   ProblemSummary,
+  QueueStatus,
   Submission,
   SubmissionSummary,
   TestCase,
@@ -118,6 +120,10 @@ export async function getContestProblems(slug: string): Promise<ProblemSummary[]
   return payload.problems;
 }
 
+export async function getContestStandings(slug: string): Promise<ContestStandings> {
+  return request<ContestStandings>(`/api/v1/contests/${slug}/standings`);
+}
+
 export async function getProblem(
   contestSlug: string,
   problemCode: string,
@@ -131,7 +137,7 @@ export async function getProblem(
 export async function createSubmission(input: {
   contestSlug: string;
   problemCode: string;
-  language: "python";
+  language: "python" | "cpp";
   source_code: string;
 }): Promise<Submission> {
   const payload = await request<{ submission: Submission }>(
@@ -253,4 +259,9 @@ export async function createAdminTestCase(input: {
     },
   );
   return payload.test_case;
+}
+
+export async function getAdminQueueStatus(): Promise<QueueStatus> {
+  const payload = await request<{ queue: QueueStatus }>("/api/v1/admin/submissions/queue");
+  return payload.queue;
 }

@@ -74,7 +74,7 @@ export interface TestCase extends TestCaseSummary {
   expected_output: string;
 }
 
-export type SubmissionLanguage = "python";
+export type SubmissionLanguage = "python" | "cpp";
 
 export type SubmissionStatus = "pending" | "running" | "finished";
 
@@ -84,6 +84,7 @@ export type SubmissionVerdict =
   | "wrong_answer"
   | "runtime_error"
   | "time_limit_exceeded"
+  | "compilation_error"
   | "internal_error"
   | "no_tests";
 
@@ -100,11 +101,46 @@ export interface SubmissionSummary {
   updated_at: string;
   judged_at: string | null;
   problem: ProblemSummary;
+  contest: ContestSummary;
 }
 
 export interface Submission extends SubmissionSummary {
   source_code: string;
   judge_log: string | null;
   user: UserSummary;
+}
+
+export interface QueueStatus {
+  pending_count: number;
+  running_count: number;
+  finished_count: number;
+  oldest_pending_submission_id: string | null;
+  oldest_pending_created_at: string | null;
+}
+
+export interface StandingProblemResult {
+  problem: ProblemSummary;
+  attempt_count: number;
+  accepted: boolean;
+  wrong_attempts_before_accept: number;
+  last_verdict: SubmissionVerdict | null;
+  accepted_at: string | null;
+  penalty_minutes: number | null;
+}
+
+export interface StandingRow {
+  rank: number;
+  user: UserSummary;
+  solved_count: number;
+  penalty_minutes: number;
+  total_attempt_count: number;
+  last_activity_at: string | null;
+  problem_results: StandingProblemResult[];
+}
+
+export interface ContestStandings {
   contest: ContestSummary;
+  generated_at: string;
+  problems: ProblemSummary[];
+  rows: StandingRow[];
 }

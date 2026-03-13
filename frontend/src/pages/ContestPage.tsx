@@ -74,7 +74,14 @@ export function ContestPage({ user }: ContestPageProps) {
 
   return (
     <div className="stack">
-      <Panel title={contest.title}>
+      <Panel
+        title={contest.title}
+        actions={
+          <Link to={`/contests/${contest.slug}/standings`} className="button button--secondary">
+            View standings
+          </Link>
+        }
+      >
         <div className="list-card__header">
           <div className="muted">
             {contest.slug} · phase: {contest.phase}
