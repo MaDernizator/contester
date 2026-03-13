@@ -426,6 +426,7 @@ def test_list_submissions_returns_only_current_user_items(client, app) -> None:
     assert payload is not None
     assert len(payload["submissions"]) == 1
     assert payload["submissions"][0]["problem"]["code"] == "A"
+    assert payload["submissions"][0]["contest"]["slug"] == "submission-contest-list"
 
 
 def test_created_submission_starts_in_pending_state(client, app) -> None:
