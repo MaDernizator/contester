@@ -7,6 +7,7 @@ import { ContestPage } from "./pages/ContestPage";
 import { HomePage } from "./pages/HomePage";
 import { ProblemPage } from "./pages/ProblemPage";
 import { StandingsPage } from "./pages/StandingsPage";
+import { SubmissionPage } from "./pages/SubmissionPage";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -66,6 +67,10 @@ export default function App() {
           <Route
             path="/contests/:contestSlug/standings"
             element={<StandingsPage user={user} />}
+          />
+          <Route
+            path="/submissions/:submissionId"
+            element={<SubmissionPage user={user} />}
           />
         </Routes>
       </PageShell>

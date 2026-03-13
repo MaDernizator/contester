@@ -315,3 +315,59 @@ pre {
     align-items: flex-start;
   }
 }cd
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.scoreboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.scoreboard-table th,
+.scoreboard-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.scoreboard-table th {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.scoreboard-user {
+  display: grid;
+  gap: 2px;
+}
+
+.scoreboard-cell {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.inline-links-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.plain-code-block {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #111827;
+  color: #f9fafb;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family:
+    "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+}

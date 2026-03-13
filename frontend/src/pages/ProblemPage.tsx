@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { createSubmission, getProblem, isApiError } from "../api/client";
 import type { Problem, Submission, User } from "../api/types";
 import { Panel } from "../components/Panel";
@@ -158,7 +158,7 @@ export function ProblemPage({ user }: ProblemPageProps) {
         ) : null}
       </Panel>
 
-      <Panel title="Submit Python solution">
+      <Panel title="Submit solution">
         <form className="form-stack" onSubmit={handleSubmit}>
           <label className="field">
             <span>Source code</span>
@@ -180,7 +180,7 @@ export function ProblemPage({ user }: ProblemPageProps) {
       </Panel>
 
       {latestSubmission ? (
-        <Panel title="Latest submission result">
+        <Panel title="Latest submission">
           <div className="list-card__header">
             <div>
               <strong>Submission {latestSubmission.id}</strong>
@@ -200,12 +200,11 @@ export function ProblemPage({ user }: ProblemPageProps) {
             <span>Time: {latestSubmission.execution_time_ms ?? "—"} ms</span>
           </div>
 
-          {latestSubmission.judge_log ? (
-            <div className="problem-block">
-              <h3>Judge log</h3>
-              <pre>{latestSubmission.judge_log}</pre>
-            </div>
-          ) : null}
+          <div>
+            <Link to={`/submissions/${latestSubmission.id}`} className="inline-link">
+              Open detailed submission page
+            </Link>
+          </div>
         </Panel>
       ) : null}
     </div>

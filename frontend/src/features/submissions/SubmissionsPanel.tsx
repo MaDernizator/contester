@@ -77,6 +77,15 @@ export function SubmissionsPanel() {
                 </span>
                 <span>Time: {submission.execution_time_ms ?? "—"} ms</span>
               </div>
+
+              <div>
+                <Link
+                  to={`/submissions/${submission.id}`}
+                  className="inline-link"
+                >
+                  Open submission details
+                </Link>
+              </div>
             </article>
           ))}
         </div>
