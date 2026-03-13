@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getSubmission, isApiError } from "../api/client";
 import type { Submission, User } from "../api/types";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
 
 interface SubmissionPageProps {
   user: User | null;
@@ -30,9 +31,13 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
     [submission],
   );
 
-  async function loadSubmission() {
+  const loadSubmission = useCallback(async (showLoader: boolean = true) => {
     if (!submissionId) {
       return;
+    }
+
+    if (showLoader) {
+      setLoading(true);
     }
 
     try {
@@ -42,32 +47,25 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
     } catch (error) {
       setErrorMessage(isApiError(error) ? error.message : "Failed to load submission.");
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
-  }
+  }, [submissionId]);
 
   useEffect(() => {
     if (!user || !submissionId) {
       return;
     }
 
-    setLoading(true);
-    void loadSubmission();
-  }, [submissionId, user]);
+    void loadSubmission(true);
+  }, [submissionId, user, loadSubmission]);
 
-  useEffect(() => {
-    if (!autoRefreshEnabled) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      void loadSubmission();
-    }, REFRESH_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [autoRefreshEnabled, submissionId]);
+  useAutoRefresh({
+    enabled: autoRefreshEnabled,
+    intervalMs: REFRESH_INTERVAL_MS,
+    onRefresh: () => loadSubmission(false),
+  });
 
   if (!user) {
     return (
@@ -109,7 +107,7 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
           <button
             type="button"
             className="button button--secondary"
-            onClick={() => void loadSubmission()}
+            onClick={() => void loadSubmission(true)}
           >
             Refresh
           </button>
@@ -140,7 +138,12 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
           </span>
           <span>Failed test: {submission.failed_test_position ?? "—"}</span>
           <span>Execution time: {submission.execution_time_ms ?? "—"} ms</span>
-          <span>Judged at: {submission.judged_at ? new Date(submission.judged_at).toLocaleString() : "—"}</span>
+          <span>
+            Judged at:{" "}
+            {submission.judged_at
+              ? new Date(submission.judged_at).toLocaleString()
+              : "—"}
+          </span>
         </div>
 
         <div className="inline-links-row">
@@ -160,7 +163,7 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
 
         {autoRefreshEnabled ? (
           <p className="muted small-text">
-            Auto-refresh is enabled while the submission is pending or running.
+            Live updates are enabled while the submission is pending or running.
           </p>
         ) : null}
       </Panel>

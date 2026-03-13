@@ -1,32 +1,52 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMySubmissions, isApiError } from "../../api/client";
 import type { SubmissionSummary } from "../../api/types";
 import { Panel } from "../../components/Panel";
 import { StatusPill } from "../../components/StatusPill";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+
+const SUBMISSIONS_REFRESH_INTERVAL_MS = 3000;
 
 export function SubmissionsPanel() {
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function loadSubmissions() {
-    setLoading(true);
-    setErrorMessage(null);
+  const hasActiveSubmissions = submissions.some(
+    (submission) =>
+      submission.status === "pending" || submission.status === "running",
+  );
+
+  const loadSubmissions = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
 
     try {
       const data = await getMySubmissions();
       setSubmissions(data);
+      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(isApiError(error) ? error.message : "Failed to load submissions.");
+      setErrorMessage(
+        isApiError(error) ? error.message : "Failed to load submissions.",
+      );
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
-  }
+  }, []);
 
   useEffect(() => {
-    void loadSubmissions();
-  }, []);
+    void loadSubmissions(true);
+  }, [loadSubmissions]);
+
+  useAutoRefresh({
+    enabled: hasActiveSubmissions,
+    intervalMs: SUBMISSIONS_REFRESH_INTERVAL_MS,
+    onRefresh: () => loadSubmissions(false),
+  });
 
   return (
     <Panel
@@ -35,7 +55,7 @@ export function SubmissionsPanel() {
         <button
           type="button"
           className="button button--secondary"
-          onClick={() => void loadSubmissions()}
+          onClick={() => void loadSubmissions(true)}
         >
           Refresh
         </button>
@@ -43,6 +63,12 @@ export function SubmissionsPanel() {
     >
       {loading ? <p className="muted">Loading submissions...</p> : null}
       {errorMessage ? <p className="feedback feedback--error">{errorMessage}</p> : null}
+
+      {hasActiveSubmissions ? (
+        <p className="muted small-text">
+          Live updates are enabled while you have pending or running submissions.
+        </p>
+      ) : null}
 
       {!loading && !errorMessage && submissions.length === 0 ? (
         <p className="muted">No submissions yet.</p>
@@ -79,10 +105,7 @@ export function SubmissionsPanel() {
               </div>
 
               <div>
-                <Link
-                  to={`/submissions/${submission.id}`}
-                  className="inline-link"
-                >
+                <Link to={`/submissions/${submission.id}`} className="inline-link">
                   Open submission details
                 </Link>
               </div>

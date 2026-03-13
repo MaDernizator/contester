@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAdminContest,
   createAdminProblem,
@@ -9,9 +9,15 @@ import {
   getAdminTestCases,
   isApiError,
 } from "../../api/client";
-import type { Contest, ProblemSummary, QueueStatus, TestCaseSummary } from "../../api/types";
+import type {
+  Contest,
+  ProblemSummary,
+  QueueStatus,
+  TestCaseSummary,
+} from "../../api/types";
 import { Panel } from "../../components/Panel";
 import { StatusPill } from "../../components/StatusPill";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 
 interface ContestFormState {
   title: string;
@@ -85,6 +91,8 @@ const initialQueueStatus: QueueStatus = {
   oldest_pending_created_at: null,
 };
 
+const QUEUE_REFRESH_INTERVAL_MS = 3000;
+
 export function AdminTools() {
   const [contests, setContests] = useState<Contest[]>([]);
   const [selectedContestId, setSelectedContestId] = useState("");
@@ -110,10 +118,20 @@ export function AdminTools() {
     [problems, selectedProblemId],
   );
 
-  async function loadQueueStatus() {
-    const queue = await getAdminQueueStatus();
-    setQueueStatus(queue);
-  }
+  const queueHasActiveWork =
+    queueStatus.pending_count > 0 || queueStatus.running_count > 0;
+
+  const loadQueueStatus = useCallback(async () => {
+    try {
+      const queue = await getAdminQueueStatus();
+      setQueueStatus(queue);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(
+        isApiError(error) ? error.message : "Failed to load queue status.",
+      );
+    }
+  }, []);
 
   async function loadContests() {
     const contestItems = await getAdminContests();
@@ -121,7 +139,9 @@ export function AdminTools() {
 
     if (contestItems.length > 0) {
       setSelectedContestId((current) =>
-        contestItems.some((contest) => contest.id === current) ? current : contestItems[0].id,
+        contestItems.some((contest) => contest.id === current)
+          ? current
+          : contestItems[0].id,
       );
     } else {
       setSelectedContestId("");
@@ -144,7 +164,9 @@ export function AdminTools() {
 
     if (problemItems.length > 0) {
       setSelectedProblemId((current) =>
-        problemItems.some((problem) => problem.id === current) ? current : problemItems[0].id,
+        problemItems.some((problem) => problem.id === current)
+          ? current
+          : problemItems[0].id,
       );
     } else {
       setSelectedProblemId("");
@@ -206,6 +228,12 @@ export function AdminTools() {
       }
     })();
   }, [selectedProblemId]);
+
+  useAutoRefresh({
+    enabled: queueHasActiveWork,
+    intervalMs: QUEUE_REFRESH_INTERVAL_MS,
+    onRefresh: loadQueueStatus,
+  });
 
   async function handleCreateContest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -340,6 +368,12 @@ export function AdminTools() {
           </span>
         </div>
 
+        {queueHasActiveWork ? (
+          <p className="muted small-text">
+            Live updates are enabled while the queue has pending or running submissions.
+          </p>
+        ) : null}
+
         {queueStatus.oldest_pending_submission_id ? (
           <p className="muted small-text">
             Oldest pending submission ID: {queueStatus.oldest_pending_submission_id}
@@ -387,7 +421,10 @@ export function AdminTools() {
                 rows={3}
                 value={contestForm.description}
                 onChange={(event) =>
-                  setContestForm((current) => ({ ...current, description: event.target.value }))
+                  setContestForm((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -414,7 +451,10 @@ export function AdminTools() {
               <input
                 value={contestForm.starts_at}
                 onChange={(event) =>
-                  setContestForm((current) => ({ ...current, starts_at: event.target.value }))
+                  setContestForm((current) => ({
+                    ...current,
+                    starts_at: event.target.value,
+                  }))
                 }
                 placeholder="2026-03-20T10:00:00Z"
               />
@@ -508,7 +548,10 @@ export function AdminTools() {
                 rows={6}
                 value={problemForm.statement}
                 onChange={(event) =>
-                  setProblemForm((current) => ({ ...current, statement: event.target.value }))
+                  setProblemForm((current) => ({
+                    ...current,
+                    statement: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -547,7 +590,10 @@ export function AdminTools() {
                 rows={3}
                 value={problemForm.sample_input}
                 onChange={(event) =>
-                  setProblemForm((current) => ({ ...current, sample_input: event.target.value }))
+                  setProblemForm((current) => ({
+                    ...current,
+                    sample_input: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -558,7 +604,10 @@ export function AdminTools() {
                 rows={3}
                 value={problemForm.sample_output}
                 onChange={(event) =>
-                  setProblemForm((current) => ({ ...current, sample_output: event.target.value }))
+                  setProblemForm((current) => ({
+                    ...current,
+                    sample_output: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -603,7 +652,10 @@ export function AdminTools() {
                   min={1}
                   value={problemForm.position}
                   onChange={(event) =>
-                    setProblemForm((current) => ({ ...current, position: event.target.value }))
+                    setProblemForm((current) => ({
+                      ...current,
+                      position: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -686,7 +738,10 @@ export function AdminTools() {
                 rows={4}
                 value={testCaseForm.input_data}
                 onChange={(event) =>
-                  setTestCaseForm((current) => ({ ...current, input_data: event.target.value }))
+                  setTestCaseForm((current) => ({
+                    ...current,
+                    input_data: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -712,7 +767,10 @@ export function AdminTools() {
                 min={1}
                 value={testCaseForm.position}
                 onChange={(event) =>
-                  setTestCaseForm((current) => ({ ...current, position: event.target.value }))
+                  setTestCaseForm((current) => ({
+                    ...current,
+                    position: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -722,7 +780,10 @@ export function AdminTools() {
                 type="checkbox"
                 checked={testCaseForm.is_sample}
                 onChange={(event) =>
-                  setTestCaseForm((current) => ({ ...current, is_sample: event.target.checked }))
+                  setTestCaseForm((current) => ({
+                    ...current,
+                    is_sample: event.target.checked,
+                  }))
                 }
               />
               <span>Sample test</span>
@@ -733,7 +794,10 @@ export function AdminTools() {
                 type="checkbox"
                 checked={testCaseForm.is_active}
                 onChange={(event) =>
-                  setTestCaseForm((current) => ({ ...current, is_active: event.target.checked }))
+                  setTestCaseForm((current) => ({
+                    ...current,
+                    is_active: event.target.checked,
+                  }))
                 }
               />
               <span>Active</span>
