@@ -9,9 +9,10 @@ import pytest
 from contester.extensions import db
 from contester.models.contest import Contest, ContestStatus
 from contester.models.problem import Problem, ProblemStatus
-from contester.models.submission import SubmissionVerdict
+from contester.models.submission import Submission, SubmissionStatus, SubmissionVerdict
 from contester.models.test_case import TestCase as ProblemTestCase
 from contester.models.user import User, UserRole
+from contester.services import SubmissionQueueService
 
 
 def _has_cpp_compiler() -> bool:
@@ -96,7 +97,13 @@ def _login(client, *, username: str, password: str) -> None:
     assert response.status_code == HTTPStatus.OK
 
 
-def test_python_submission_is_accepted(client) -> None:
+def _process_queue(app) -> int:
+    with app.app_context():
+        service = SubmissionQueueService.from_app_config()
+        return service.run_once()
+
+
+def test_python_submission_is_created_as_pending_and_then_accepted(client, app) -> None:
     admin = _create_user(username="admin-submission-1", password="verystrong123", role=UserRole.ADMIN)
     participant = _create_user(
         username="participant-submission-1",
@@ -130,16 +137,28 @@ def test_python_submission_is_accepted(client) -> None:
         },
     )
 
-    assert response.status_code == HTTPStatus.CREATED
+    assert response.status_code == HTTPStatus.ACCEPTED
     payload = response.get_json()
     assert payload is not None
-    assert payload["submission"]["verdict"] == "accepted"
-    assert payload["submission"]["status"] == "finished"
-    assert payload["submission"]["passed_test_count"] == 2
-    assert payload["submission"]["total_test_count"] == 2
+    submission_id = payload["submission"]["id"]
+    assert payload["submission"]["status"] == "pending"
+    assert payload["submission"]["verdict"] == "pending"
+
+    processed = _process_queue(app)
+    assert processed == 1
+
+    submission_response = client.get(f"/api/v1/submissions/{submission_id}")
+    assert submission_response.status_code == HTTPStatus.OK
+
+    judged_payload = submission_response.get_json()
+    assert judged_payload is not None
+    assert judged_payload["submission"]["verdict"] == "accepted"
+    assert judged_payload["submission"]["status"] == "finished"
+    assert judged_payload["submission"]["passed_test_count"] == 2
+    assert judged_payload["submission"]["total_test_count"] == 2
 
 
-def test_python_submission_gets_wrong_answer(client) -> None:
+def test_python_submission_gets_wrong_answer_after_worker_processing(client, app) -> None:
     admin = _create_user(username="admin-submission-2", password="verystrong123", role=UserRole.ADMIN)
     participant = _create_user(
         username="participant-submission-2",
@@ -172,15 +191,22 @@ def test_python_submission_gets_wrong_answer(client) -> None:
         },
     )
 
-    assert response.status_code == HTTPStatus.CREATED
-    payload = response.get_json()
-    assert payload is not None
-    assert payload["submission"]["verdict"] == "wrong_answer"
-    assert payload["submission"]["failed_test_position"] == 1
+    assert response.status_code == HTTPStatus.ACCEPTED
+    submission_id = response.get_json()["submission"]["id"]
+
+    processed = _process_queue(app)
+    assert processed == 1
+
+    judged_response = client.get(f"/api/v1/submissions/{submission_id}")
+    assert judged_response.status_code == HTTPStatus.OK
+    judged_payload = judged_response.get_json()
+    assert judged_payload is not None
+    assert judged_payload["submission"]["verdict"] == "wrong_answer"
+    assert judged_payload["submission"]["failed_test_position"] == 1
 
 
 @pytest.mark.skipif(not _has_cpp_compiler(), reason="C++ compiler is not available")
-def test_cpp_submission_is_accepted(client) -> None:
+def test_cpp_submission_is_accepted_after_worker_processing(client, app) -> None:
     admin = _create_user(username="admin-submission-cpp-1", password="verystrong123", role=UserRole.ADMIN)
     participant = _create_user(
         username="participant-submission-cpp-1",
@@ -222,18 +248,23 @@ def test_cpp_submission_is_accepted(client) -> None:
         },
     )
 
-    assert response.status_code == HTTPStatus.CREATED
-    payload = response.get_json()
-    assert payload is not None
-    assert payload["submission"]["language"] == "cpp"
-    assert payload["submission"]["verdict"] == "accepted"
-    assert payload["submission"]["status"] == "finished"
-    assert payload["submission"]["passed_test_count"] == 2
-    assert payload["submission"]["total_test_count"] == 2
+    assert response.status_code == HTTPStatus.ACCEPTED
+    submission_id = response.get_json()["submission"]["id"]
+
+    processed = _process_queue(app)
+    assert processed == 1
+
+    judged_response = client.get(f"/api/v1/submissions/{submission_id}")
+    assert judged_response.status_code == HTTPStatus.OK
+    judged_payload = judged_response.get_json()
+    assert judged_payload is not None
+    assert judged_payload["submission"]["language"] == "cpp"
+    assert judged_payload["submission"]["verdict"] == "accepted"
+    assert judged_payload["submission"]["status"] == "finished"
 
 
 @pytest.mark.skipif(not _has_cpp_compiler(), reason="C++ compiler is not available")
-def test_cpp_submission_returns_compilation_error(client) -> None:
+def test_cpp_submission_returns_compilation_error_after_worker_processing(client, app) -> None:
     admin = _create_user(username="admin-submission-cpp-2", password="verystrong123", role=UserRole.ADMIN)
     participant = _create_user(
         username="participant-submission-cpp-2",
@@ -272,17 +303,28 @@ def test_cpp_submission_returns_compilation_error(client) -> None:
         },
     )
 
-    assert response.status_code == HTTPStatus.CREATED
-    payload = response.get_json()
-    assert payload is not None
-    assert payload["submission"]["language"] == "cpp"
-    assert payload["submission"]["verdict"] == SubmissionVerdict.COMPILATION_ERROR.value
-    assert payload["submission"]["status"] == "finished"
-    assert payload["submission"]["passed_test_count"] == 0
-    assert payload["submission"]["judge_log"]
+    assert response.status_code == HTTPStatus.ACCEPTED
+    submission_id = response.get_json()["submission"]["id"]
+
+    processed = _process_queue(app)
+    assert processed == 1
+
+    judged_response = client.get(f"/api/v1/submissions/{submission_id}")
+    assert judged_response.status_code == HTTPStatus.OK
+    judged_payload = judged_response.get_json()
+    assert judged_payload is not None
+    assert judged_payload["submission"]["language"] == "cpp"
+    assert judged_payload["submission"]["verdict"] == SubmissionVerdict.COMPILATION_ERROR.value
+    assert judged_payload["submission"]["status"] == "finished"
+    assert judged_payload["submission"]["judge_log"]
 
 
-def test_submission_detail_is_restricted_for_other_participants(client) -> None:
+def test_worker_run_once_returns_zero_when_queue_is_empty(app) -> None:
+    processed = _process_queue(app)
+    assert processed == 0
+
+
+def test_submission_detail_is_restricted_for_other_participants(client, app) -> None:
     admin = _create_user(username="admin-submission-3", password="verystrong123", role=UserRole.ADMIN)
     owner = _create_user(username="participant-owner", password="verystrong123", role=UserRole.PARTICIPANT)
     stranger = _create_user(
@@ -314,8 +356,10 @@ def test_submission_detail_is_restricted_for_other_participants(client) -> None:
             "source_code": "a, b = map(int, input().split())\nprint(a + b)\n",
         },
     )
-    assert create_response.status_code == HTTPStatus.CREATED
+    assert create_response.status_code == HTTPStatus.ACCEPTED
     submission_id = create_response.get_json()["submission"]["id"]
+
+    _process_queue(app)
 
     client.post("/api/v1/auth/logout")
 
@@ -331,7 +375,7 @@ def test_submission_detail_is_restricted_for_other_participants(client) -> None:
     assert admin_response.get_json()["submission"]["user"]["username"] == owner.username
 
 
-def test_list_submissions_returns_only_current_user_items(client) -> None:
+def test_list_submissions_returns_only_current_user_items(client, app) -> None:
     admin = _create_user(username="admin-submission-4", password="verystrong123", role=UserRole.ADMIN)
     first = _create_user(username="participant-first", password="verystrong123", role=UserRole.PARTICIPANT)
     second = _create_user(username="participant-second", password="verystrong123", role=UserRole.PARTICIPANT)
@@ -359,7 +403,7 @@ def test_list_submissions_returns_only_current_user_items(client) -> None:
             "source_code": "a, b = map(int, input().split())\nprint(a + b)\n",
         },
     )
-    assert first_submit.status_code == HTTPStatus.CREATED
+    assert first_submit.status_code == HTTPStatus.ACCEPTED
     client.post("/api/v1/auth/logout")
 
     _login(client, username=second.username, password="verystrong123")
@@ -370,7 +414,9 @@ def test_list_submissions_returns_only_current_user_items(client) -> None:
             "source_code": "a, b = map(int, input().split())\nprint(a + b)\n",
         },
     )
-    assert second_submit.status_code == HTTPStatus.CREATED
+    assert second_submit.status_code == HTTPStatus.ACCEPTED
+
+    _process_queue(app)
 
     list_response = client.get("/api/v1/submissions")
     assert list_response.status_code == HTTPStatus.OK
@@ -379,3 +425,46 @@ def test_list_submissions_returns_only_current_user_items(client) -> None:
     assert payload is not None
     assert len(payload["submissions"]) == 1
     assert payload["submissions"][0]["problem"]["code"] == "A"
+
+
+def test_created_submission_starts_in_pending_state(client, app) -> None:
+    admin = _create_user(username="admin-submission-5", password="verystrong123", role=UserRole.ADMIN)
+    participant = _create_user(
+        username="participant-submission-5",
+        password="verystrong123",
+        role=UserRole.PARTICIPANT,
+    )
+
+    contest = _create_contest(
+        creator=admin,
+        title="Published Contest",
+        slug="submission-contest-pending",
+        status=ContestStatus.PUBLISHED,
+    )
+    problem = _create_problem(
+        contest=contest,
+        code="A",
+        title="A + B",
+        position=1,
+        status=ProblemStatus.PUBLISHED,
+    )
+    _create_test_case(problem=problem, position=1, input_data="1 2\n", expected_output="3\n")
+
+    _login(client, username=participant.username, password="verystrong123")
+
+    response = client.post(
+        "/api/v1/contests/submission-contest-pending/problems/A/submissions",
+        json={
+            "language": "python",
+            "source_code": "a, b = map(int, input().split())\nprint(a + b)\n",
+        },
+    )
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    submission_id = response.get_json()["submission"]["id"]
+
+    with app.app_context():
+        submission = db.session.get(Submission, submission_id)
+        assert submission is not None
+        assert submission.status == SubmissionStatus.PENDING
+        assert submission.verdict == SubmissionVerdict.PENDING

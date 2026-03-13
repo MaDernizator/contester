@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from pathlib import Path
 from uuid import UUID
 
 from flask import Blueprint, current_app, jsonify
@@ -12,7 +11,6 @@ from werkzeug.exceptions import BadRequest, Forbidden, NotFound
 
 from contester.auth import get_authenticated_user
 from contester.extensions import db
-from contester.judging import JudgeService
 from contester.models.contest import Contest, ContestStatus
 from contester.models.problem import Problem, ProblemStatus
 from contester.models.submission import Submission, SubmissionLanguage
@@ -115,18 +113,8 @@ def create_submission(contest_slug: str, problem_code: str):
         db.session.rollback()
         raise BadRequest(str(error)) from error
 
-    judge_service = JudgeService(
-        Path(current_app.config["JUDGE_WORKSPACE_DIR"]),
-        execution_backend=current_app.config["JUDGE_EXECUTION_BACKEND"],
-        docker_binary=current_app.config["JUDGE_DOCKER_BINARY"],
-        docker_image=current_app.config["JUDGE_DOCKER_IMAGE"],
-        cxx_compiler=current_app.config["CXX_COMPILER"],
-        cpp_compile_timeout_sec=current_app.config["CPP_COMPILE_TIMEOUT_SEC"],
-    )
-    judge_service.judge_submission(submission.id)
-
     refreshed_submission = _get_submission_or_404(submission.id)
-    return jsonify({"submission": serialize_submission(refreshed_submission)}), HTTPStatus.CREATED
+    return jsonify({"submission": serialize_submission(refreshed_submission)}), HTTPStatus.ACCEPTED
 
 
 @submissions_blueprint.get("/submissions")

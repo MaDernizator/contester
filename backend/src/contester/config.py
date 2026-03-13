@@ -53,6 +53,7 @@ class Settings:
     judge_execution_backend: str
     judge_docker_binary: str
     judge_docker_image: str
+    judge_poll_interval_sec: int
     json_sort_keys: bool = False
 
     def to_mapping(self) -> dict[str, object]:
@@ -78,6 +79,7 @@ class Settings:
             "JUDGE_EXECUTION_BACKEND": self.judge_execution_backend,
             "JUDGE_DOCKER_BINARY": self.judge_docker_binary,
             "JUDGE_DOCKER_IMAGE": self.judge_docker_image,
+            "JUDGE_POLL_INTERVAL_SEC": self.judge_poll_interval_sec,
         }
 
 
@@ -111,7 +113,7 @@ def get_settings(environment: str | None = None) -> Settings:
     else:
         database_uri = os.getenv(
             "DATABASE_URL",
-            "postgresql+psycopg://contester:contester@127.0.0.1:55432/contester",
+            "postgresql+psycopg://contester:contester@127.0.0.1:5432/contester",
         )
         sqlalchemy_engine_options = {
             "pool_pre_ping": True,
@@ -151,6 +153,10 @@ def get_settings(environment: str | None = None) -> Settings:
     if not judge_docker_image:
         raise ValueError("JUDGE_DOCKER_IMAGE must not be empty.")
 
+    judge_poll_interval_sec = _read_int("JUDGE_POLL_INTERVAL_SEC", 2)
+    if judge_poll_interval_sec < 1:
+        raise ValueError("JUDGE_POLL_INTERVAL_SEC must be at least 1.")
+
     return Settings(
         app_name=os.getenv("APP_NAME", "contester-backend"),
         environment=resolved_environment,
@@ -169,4 +175,5 @@ def get_settings(environment: str | None = None) -> Settings:
         judge_execution_backend=judge_execution_backend,
         judge_docker_binary=judge_docker_binary,
         judge_docker_image=judge_docker_image,
+        judge_poll_interval_sec=judge_poll_interval_sec,
     )

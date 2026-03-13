@@ -27,6 +27,15 @@ Start the application:
 python -m contester.app
 Create first admin
 flask --app wsgi create-admin
+Run judge worker
+
+Process all pending submissions once:
+
+flask --app wsgi run-judge-worker --once
+
+Run worker in polling mode:
+
+flask --app wsgi run-judge-worker
 Main endpoints
 GET   /api/v1/health
 POST  /api/v1/auth/register
@@ -67,6 +76,16 @@ local — default, executes Python/C++ directly from the backend process.
 
 docker — runs Python/C++ inside an isolated Docker container.
 
+Queue model
+
+Submissions are now processed asynchronously:
+
+API creates submission and returns 202 Accepted
+
+submission starts in pending
+
+judge worker picks it up and produces final verdict
+
 Enable Docker judge backend
 
 Build the judge image from the repository root:
@@ -79,7 +98,7 @@ JUDGE_EXECUTION_BACKEND=docker
 JUDGE_DOCKER_BINARY=docker
 JUDGE_DOCKER_IMAGE=contester-judge:local
 
-Restart backend.
+Restart backend and worker.
 
 Notes
 
