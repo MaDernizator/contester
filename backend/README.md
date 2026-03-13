@@ -8,31 +8,25 @@ Backend API for the local contest management system.
 
 ```bash
 docker compose up -d db
-
 Install dependencies:
 
 cd backend
 python -m pip install -e ".[dev]"
-
 Apply migrations:
 
 flask --app wsgi db upgrade
-
 Run tests:
 
 pytest
-
 Start the application:
 
 python -m contester.app
 Create first admin
 flask --app wsgi create-admin
 Run judge worker
-
 Process all pending submissions once:
 
 flask --app wsgi run-judge-worker --once
-
 Run worker in polling mode:
 
 flask --app wsgi run-judge-worker
@@ -59,6 +53,8 @@ POST  /api/v1/admin/problems/<problem_id>/test-cases
 GET   /api/v1/admin/test-cases/<test_case_id>
 PATCH /api/v1/admin/test-cases/<test_case_id>
 
+GET   /api/v1/admin/submissions
+POST  /api/v1/admin/submissions/<submission_id>/rejudge
 GET   /api/v1/admin/submissions/queue
 
 GET   /api/v1/contests
@@ -71,7 +67,6 @@ POST  /api/v1/contests/<slug>/problems/<problem_code>/submissions
 GET   /api/v1/submissions
 GET   /api/v1/submissions/<submission_id>
 Judge backends
-
 Two execution backends are supported:
 
 local — default, executes Python/C++ directly from the worker process.
@@ -79,7 +74,6 @@ local — default, executes Python/C++ directly from the worker process.
 docker — runs Python/C++ inside an isolated Docker container.
 
 Queue model
-
 Submissions are processed asynchronously:
 
 API creates submission and returns 202 Accepted
@@ -95,8 +89,30 @@ stale running submissions are automatically re-queued after timeout
 The timeout is controlled by:
 
 JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC=300
-Docker Compose deployment
+Admin submission operations
+Admins can:
 
+list all submissions with filters;
+
+inspect queue health;
+
+send a finished or pending submission back to pending via rejudge.
+
+Supported filters for GET /api/v1/admin/submissions:
+
+contest_slug
+
+problem_code
+
+username
+
+language
+
+status
+
+verdict
+
+Docker Compose deployment
 The repository root docker-compose.yml starts:
 
 db
@@ -108,25 +124,20 @@ judge-worker
 Start everything:
 
 docker compose up --build
-
 The PostgreSQL host port is mapped to 55432.
 
 Enable Docker judge backend
-
 Build the judge image from the repository root:
 
 docker build -t contester-judge:local -f infra/judge/Dockerfile infra/judge
-
 In backend/.env, enable Docker backend:
 
 JUDGE_EXECUTION_BACKEND=docker
 JUDGE_DOCKER_BINARY=docker
 JUDGE_DOCKER_IMAGE=contester-judge:local
-
 Restart backend and worker.
 
 Notes
-
 Participants register via the public API.
 
 Admin accounts are created only via CLI.
