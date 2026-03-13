@@ -9,8 +9,10 @@ from sqlalchemy.orm import selectinload
 from contester.extensions import db
 from contester.judging.cpp_runner import (
     CppCompilationStatus,
+    CppExecutionStatus,
     CppRunner,
 )
+from contester.judging.docker_runner import DockerRunner
 from contester.judging.python_runner import (
     PythonExecutionStatus,
     PythonRunner,
@@ -52,12 +54,23 @@ class JudgeService:
         self,
         workspace_root: Path,
         *,
+        execution_backend: str,
+        docker_binary: str,
+        docker_image: str,
         cxx_compiler: str,
         cpp_compile_timeout_sec: int,
     ) -> None:
+        if execution_backend not in {"local", "docker"}:
+            raise ValueError(f"Unsupported execution backend: {execution_backend!r}.")
+
         self.workspace_root = workspace_root
+        self.execution_backend = execution_backend
         self.python_runner = PythonRunner()
         self.cpp_runner = CppRunner()
+        self.docker_runner = DockerRunner(
+            image=docker_image,
+            docker_binary=docker_binary,
+        )
         self.cxx_compiler = cxx_compiler
         self.cpp_compile_timeout_sec = cpp_compile_timeout_sec
 
@@ -123,12 +136,22 @@ class JudgeService:
                 workspace_dir = Path(temporary_dir)
 
                 for test_case in test_cases:
-                    result = self.python_runner.execute(
-                        source_code=submission.source_code,
-                        input_data=test_case.input_data,
-                        time_limit_ms=submission.problem.time_limit_ms,
-                        workspace_dir=workspace_dir,
-                    )
+                    if self.execution_backend == "docker":
+                        result = self.docker_runner.execute_python(
+                            source_code=submission.source_code,
+                            input_data=test_case.input_data,
+                            time_limit_ms=submission.problem.time_limit_ms,
+                            workspace_dir=workspace_dir,
+                            memory_limit_mb=submission.problem.memory_limit_mb,
+                        )
+                    else:
+                        result = self.python_runner.execute(
+                            source_code=submission.source_code,
+                            input_data=test_case.input_data,
+                            time_limit_ms=submission.problem.time_limit_ms,
+                            workspace_dir=workspace_dir,
+                        )
+
                     max_execution_time_ms = max(
                         max_execution_time_ms,
                         result.execution_time_ms,
@@ -214,12 +237,21 @@ class JudgeService:
             with tempfile.TemporaryDirectory(dir=self.workspace_root) as temporary_dir:
                 workspace_dir = Path(temporary_dir)
 
-                compile_result = self.cpp_runner.compile(
-                    source_code=submission.source_code,
-                    workspace_dir=workspace_dir,
-                    compiler=self.cxx_compiler,
-                    timeout_sec=self.cpp_compile_timeout_sec,
-                )
+                if self.execution_backend == "docker":
+                    compile_result = self.docker_runner.compile_cpp(
+                        source_code=submission.source_code,
+                        workspace_dir=workspace_dir,
+                        compiler=self.cxx_compiler,
+                        timeout_sec=self.cpp_compile_timeout_sec,
+                        memory_limit_mb=submission.problem.memory_limit_mb,
+                    )
+                else:
+                    compile_result = self.cpp_runner.compile(
+                        source_code=submission.source_code,
+                        workspace_dir=workspace_dir,
+                        compiler=self.cxx_compiler,
+                        timeout_sec=self.cpp_compile_timeout_sec,
+                    )
 
                 if compile_result.status == CppCompilationStatus.COMPILER_NOT_AVAILABLE:
                     submission.finish(
@@ -275,18 +307,28 @@ class JudgeService:
                     return submission
 
                 for test_case in test_cases:
-                    result = self.cpp_runner.execute(
-                        binary_path=compile_result.binary_path,
-                        input_data=test_case.input_data,
-                        time_limit_ms=submission.problem.time_limit_ms,
-                        workspace_dir=workspace_dir,
-                    )
+                    if self.execution_backend == "docker":
+                        result = self.docker_runner.execute_cpp(
+                            binary_path=compile_result.binary_path,
+                            input_data=test_case.input_data,
+                            time_limit_ms=submission.problem.time_limit_ms,
+                            workspace_dir=workspace_dir,
+                            memory_limit_mb=submission.problem.memory_limit_mb,
+                        )
+                    else:
+                        result = self.cpp_runner.execute(
+                            binary_path=compile_result.binary_path,
+                            input_data=test_case.input_data,
+                            time_limit_ms=submission.problem.time_limit_ms,
+                            workspace_dir=workspace_dir,
+                        )
+
                     max_execution_time_ms = max(
                         max_execution_time_ms,
                         result.execution_time_ms,
                     )
 
-                    if result.status.value == "time_limit_exceeded":
+                    if result.status == CppExecutionStatus.TIME_LIMIT_EXCEEDED:
                         submission.finish(
                             verdict=SubmissionVerdict.TIME_LIMIT_EXCEEDED,
                             passed_test_count=passed_test_count,
@@ -298,7 +340,7 @@ class JudgeService:
                         db.session.commit()
                         return submission
 
-                    if result.status.value == "runtime_error":
+                    if result.status == CppExecutionStatus.RUNTIME_ERROR:
                         submission.finish(
                             verdict=SubmissionVerdict.RUNTIME_ERROR,
                             passed_test_count=passed_test_count,

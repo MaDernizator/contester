@@ -59,6 +59,28 @@ GET   /api/v1/contests/<slug>/standings
 POST  /api/v1/contests/<slug>/problems/<problem_code>/submissions
 GET   /api/v1/submissions
 GET   /api/v1/submissions/<submission_id>
+Judge backends
+
+Two execution backends are supported:
+
+local — default, executes Python/C++ directly from the backend process.
+
+docker — runs Python/C++ inside an isolated Docker container.
+
+Enable Docker judge backend
+
+Build the judge image from the repository root:
+
+docker build -t contester-judge:local -f infra/judge/Dockerfile infra/judge
+
+In backend/.env, enable Docker backend:
+
+JUDGE_EXECUTION_BACKEND=docker
+JUDGE_DOCKER_BINARY=docker
+JUDGE_DOCKER_IMAGE=contester-judge:local
+
+Restart backend.
+
 Notes
 
 Participants register via the public API.
@@ -73,13 +95,11 @@ Source code is sent as JSON field source_code.
 
 Supported submission languages: python, cpp.
 
-The current judge implementation is synchronous and executes Python/C++ locally from the backend process.
+The runner layer is isolated in separate modules so it can be swapped between local and Docker execution backends.
 
-The runner layer is isolated in separate modules so it can be replaced with Docker-based execution later.
+Docker backend is intended primarily for host-based backend execution. If backend itself runs inside a container, Docker CLI/socket access must be configured separately.
 
-For C++ support, the backend currently supports both g++-style compilers and MSVC-style cl.
-
-If cl is used on Windows, run the backend from a Developer Command Prompt / Developer PowerShell so the compiler and standard library environment are initialized correctly.
+For C++ support, a compiler such as g++ must be available in PATH, or CXX_COMPILER must point to it explicitly when using the local backend.
 
 Standings are calculated in ICPC-like style using contest starts_at as the reference point. If starts_at is absent, contest created_at is used as a fallback.
 

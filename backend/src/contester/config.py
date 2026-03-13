@@ -12,6 +12,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(BACKEND_ROOT / ".env")
 
 VALID_ENVIRONMENTS = {"development", "testing", "production"}
+VALID_JUDGE_EXECUTION_BACKENDS = {"local", "docker"}
 
 
 def _read_bool(name: str, default: bool = False) -> bool:
@@ -49,6 +50,9 @@ class Settings:
     max_source_code_length: int
     cxx_compiler: str
     cpp_compile_timeout_sec: int
+    judge_execution_backend: str
+    judge_docker_binary: str
+    judge_docker_image: str
     json_sort_keys: bool = False
 
     def to_mapping(self) -> dict[str, object]:
@@ -71,6 +75,9 @@ class Settings:
             "MAX_SOURCE_CODE_LENGTH": self.max_source_code_length,
             "CXX_COMPILER": self.cxx_compiler,
             "CPP_COMPILE_TIMEOUT_SEC": self.cpp_compile_timeout_sec,
+            "JUDGE_EXECUTION_BACKEND": self.judge_execution_backend,
+            "JUDGE_DOCKER_BINARY": self.judge_docker_binary,
+            "JUDGE_DOCKER_IMAGE": self.judge_docker_image,
         }
 
 
@@ -128,6 +135,22 @@ def get_settings(environment: str | None = None) -> Settings:
     if not cxx_compiler:
         raise ValueError("CXX_COMPILER must not be empty.")
 
+    judge_execution_backend = os.getenv("JUDGE_EXECUTION_BACKEND", "local").strip().lower()
+    if judge_execution_backend not in VALID_JUDGE_EXECUTION_BACKENDS:
+        supported = ", ".join(sorted(VALID_JUDGE_EXECUTION_BACKENDS))
+        raise ValueError(
+            "Unsupported JUDGE_EXECUTION_BACKEND="
+            f"{judge_execution_backend!r}. Supported values: {supported}."
+        )
+
+    judge_docker_binary = os.getenv("JUDGE_DOCKER_BINARY", "docker").strip()
+    if not judge_docker_binary:
+        raise ValueError("JUDGE_DOCKER_BINARY must not be empty.")
+
+    judge_docker_image = os.getenv("JUDGE_DOCKER_IMAGE", "contester-judge:local").strip()
+    if not judge_docker_image:
+        raise ValueError("JUDGE_DOCKER_IMAGE must not be empty.")
+
     return Settings(
         app_name=os.getenv("APP_NAME", "contester-backend"),
         environment=resolved_environment,
@@ -143,4 +166,7 @@ def get_settings(environment: str | None = None) -> Settings:
         max_source_code_length=max_source_code_length,
         cxx_compiler=cxx_compiler,
         cpp_compile_timeout_sec=cpp_compile_timeout_sec,
+        judge_execution_backend=judge_execution_backend,
+        judge_docker_binary=judge_docker_binary,
+        judge_docker_image=judge_docker_image,
     )

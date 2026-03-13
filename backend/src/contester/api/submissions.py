@@ -117,6 +117,9 @@ def create_submission(contest_slug: str, problem_code: str):
 
     judge_service = JudgeService(
         Path(current_app.config["JUDGE_WORKSPACE_DIR"]),
+        execution_backend=current_app.config["JUDGE_EXECUTION_BACKEND"],
+        docker_binary=current_app.config["JUDGE_DOCKER_BINARY"],
+        docker_image=current_app.config["JUDGE_DOCKER_IMAGE"],
         cxx_compiler=current_app.config["CXX_COMPILER"],
         cpp_compile_timeout_sec=current_app.config["CPP_COMPILE_TIMEOUT_SEC"],
     )
