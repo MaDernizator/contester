@@ -15,6 +15,14 @@ services:
       timeout: 5s
       retries: 20
 
+  judge-base:
+    build:
+      context: ./infra/judge
+    image: contester-judge:local
+    container_name: contester-judge-base
+    restart: unless-stopped
+    command: ["sh", "-c", "tail -f /dev/null"]
+
   backend:
     build:
       context: ./backend
@@ -55,23 +63,34 @@ services:
       context: ./backend
     container_name: contester-judge-worker
     restart: unless-stopped
+    user: "0:0"
     depends_on:
       db:
         condition: service_healthy
       backend:
         condition: service_healthy
+      judge-base:
+        condition: service_started
     environment:
       APP_ENV: production
       APP_NAME: contester-backend
       SECRET_KEY: ${SECRET_KEY:-change-me-local-network-secret}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contester}:${POSTGRES_PASSWORD:-contester}@db:5432/${POSTGRES_DB:-contester}
-      JUDGE_EXECUTION_BACKEND: local
+      JUDGE_EXECUTION_BACKEND: docker
+      JUDGE_DOCKER_BINARY: docker
+      JUDGE_DOCKER_IMAGE: contester-judge:local
+      JUDGE_DOCKER_SHARED_VOLUME: contester_judge_workspace
+      JUDGE_DOCKER_SHARED_MOUNT_PATH: /judge-shared
+      JUDGE_WORKSPACE_DIR: /judge-shared
       CXX_COMPILER: g++
       CPP_COMPILE_TIMEOUT_SEC: ${CPP_COMPILE_TIMEOUT_SEC:-15}
       JUDGE_POLL_INTERVAL_SEC: ${JUDGE_POLL_INTERVAL_SEC:-2}
       JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: ${JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC:-300}
     command: ["/app/docker/entrypoint-worker.sh"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - contester_judge_workspace:/judge-shared
 
   frontend:
     build:
@@ -91,3 +110,4 @@ services:
 
 volumes:
   contester_postgres_data:
+  contester_judge_workspace:

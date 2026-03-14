@@ -8,6 +8,8 @@ ENV LANG=C.UTF-8
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends g++ \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash judge
 
-WORKDIR /workspace
+WORKDIR /judge
+USER judge

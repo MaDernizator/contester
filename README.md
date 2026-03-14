@@ -1,93 +1,131 @@
-services:
-  db:
-    image: postgres:16-alpine
-    container_name: contester-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-contester}
-      POSTGRES_USER: ${POSTGRES_USER:-contester}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contester}
-    volumes:
-      - contester_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-contester} -d ${POSTGRES_DB:-contester}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+# Contester
 
-  backend:
-    build:
-      context: ./backend
-    container_name: contester-backend
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      APP_ENV: production
-      APP_NAME: contester-backend
-      SECRET_KEY: ${SECRET_KEY:-change-me-local-network-secret}
-      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contester}:${POSTGRES_PASSWORD:-contester}@db:5432/${POSTGRES_DB:-contester}
-      PORT: 8000
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
-      WEB_THREADS: ${WEB_THREADS:-4}
-      WEB_TIMEOUT: ${WEB_TIMEOUT:-120}
-      JUDGE_EXECUTION_BACKEND: local
-      CXX_COMPILER: g++
-      CPP_COMPILE_TIMEOUT_SEC: ${CPP_COMPILE_TIMEOUT_SEC:-15}
-      JUDGE_POLL_INTERVAL_SEC: ${JUDGE_POLL_INTERVAL_SEC:-2}
-      JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: ${JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC:-300}
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+Local-network contest management system with:
 
-  judge-worker:
-    build:
-      context: ./backend
-    container_name: contester-judge-worker
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    environment:
-      APP_ENV: production
-      APP_NAME: contester-backend
-      SECRET_KEY: ${SECRET_KEY:-change-me-local-network-secret}
-      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contester}:${POSTGRES_PASSWORD:-contester}@db:5432/${POSTGRES_DB:-contester}
-      JUDGE_EXECUTION_BACKEND: local
-      CXX_COMPILER: g++
-      CPP_COMPILE_TIMEOUT_SEC: ${CPP_COMPILE_TIMEOUT_SEC:-15}
-      JUDGE_POLL_INTERVAL_SEC: ${JUDGE_POLL_INTERVAL_SEC:-2}
-      JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: ${JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC:-300}
-    command: ["/app/docker/entrypoint-worker.sh"]
+- frontend
+- backend API
+- PostgreSQL
+- asynchronous judge worker
+- isolated judge sandbox containers
 
-  frontend:
-    build:
-      context: ./frontend
-    container_name: contester-frontend
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-8080}:80"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+## One-command deployment
 
-volumes:
-  contester_postgres_data:
+Requirements:
+
+- Docker Desktop
+
+Start the whole system from the repository root:
+
+```powershell
+docker compose up --build -d
+After startup, the web UI is available at:
+
+http://127.0.0.1:8080
+From another computer in the same local network, open:
+
+http://YOUR_HOST_IP:8080
+First admin
+Create the first admin account:
+
+docker compose exec backend flask --app wsgi create-admin
+Stop the system
+docker compose down
+Rebuild after code changes
+docker compose up --build -d
+Runtime architecture
+The main long-lived services are:
+
+db
+
+backend
+
+judge-worker
+
+frontend
+
+judge-base
+
+judge-base exists so the dedicated sandbox image is built and available in the same docker compose up --build.
+
+When a submission is judged:
+
+backend stores it as pending
+
+judge-worker claims it
+
+judge-worker launches a short-lived isolated sandbox container from contester-judge:local
+
+sandbox executes Python or C++ with resource limits
+
+sandbox container is removed after execution
+
+Isolation model
+Sandbox containers are launched with:
+
+no network
+
+read-only root filesystem
+
+writable tmpfs for /tmp
+
+dropped Linux capabilities
+
+no-new-privileges
+
+CPU, memory and PID limits
+
+separate shared workspace volume only for submission files
+
+Useful environment overrides
+You can override these variables before startup:
+
+FRONTEND_PORT — default 8080
+
+SECRET_KEY
+
+POSTGRES_DB
+
+POSTGRES_USER
+
+POSTGRES_PASSWORD
+
+WEB_CONCURRENCY
+
+CPP_COMPILE_TIMEOUT_SEC
+
+JUDGE_POLL_INTERVAL_SEC
+
+JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC
+
+Example:
+
+$env:FRONTEND_PORT="8090"
+$env:SECRET_KEY="replace-with-a-long-random-value"
+docker compose up --build -d
+Quick checks
+Health through frontend proxy:
+
+Invoke-RestMethod `
+  -Method GET `
+  -Uri "http://127.0.0.1:8080/api/v1/health"
+Create admin:
+
+docker compose exec backend flask --app wsgi create-admin
+Show running services:
+
+docker compose ps
+Show worker logs:
+
+docker compose logs -f judge-worker
+Notes
+Frontend and API work from the same origin through nginx proxy.
+
+Backend is not exposed directly to the host by default.
+
+Worker is separate from backend.
+
+Execution no longer happens inside the worker container itself in the production compose profile.
+
+Worker requires Docker socket access because it orchestrates short-lived sandbox containers.
+
+The next infrastructure step is normal multi-worker scaling on top of this isolated sandbox model.

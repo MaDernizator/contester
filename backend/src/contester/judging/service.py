@@ -57,6 +57,8 @@ class JudgeService:
         execution_backend: str,
         docker_binary: str,
         docker_image: str,
+        docker_shared_volume: str,
+        docker_shared_mount_path: str,
         cxx_compiler: str,
         cpp_compile_timeout_sec: int,
     ) -> None:
@@ -70,6 +72,8 @@ class JudgeService:
         self.docker_runner = DockerRunner(
             image=docker_image,
             docker_binary=docker_binary,
+            shared_volume_name=docker_shared_volume,
+            shared_mount_path=docker_shared_mount_path,
         )
         self.cxx_compiler = cxx_compiler
         self.cpp_compile_timeout_sec = cpp_compile_timeout_sec

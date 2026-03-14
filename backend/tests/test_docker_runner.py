@@ -7,7 +7,7 @@ from contester.judging.docker_runner import DockerRunner
 from contester.judging.python_runner import PythonExecutionStatus
 
 
-def test_execute_python_builds_expected_docker_command(tmp_path, monkeypatch) -> None:
+def test_execute_python_builds_expected_isolated_docker_command(tmp_path, monkeypatch) -> None:
     captured_commands: list[list[str]] = []
     captured_inputs: list[str | None] = []
 
@@ -18,28 +18,37 @@ def test_execute_python_builds_expected_docker_command(tmp_path, monkeypatch) ->
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    runner = DockerRunner(image="contester-judge:local", docker_binary="docker")
+    workspace_dir = tmp_path / "job-1"
+    runner = DockerRunner(
+        image="contester-judge:local",
+        docker_binary="docker",
+        shared_volume_name="contester_judge_workspace",
+        shared_mount_path=str(tmp_path),
+    )
 
     result = runner.execute_python(
         source_code="print(input())\n",
         input_data="3\n",
         time_limit_ms=1000,
-        workspace_dir=tmp_path,
+        workspace_dir=workspace_dir,
         memory_limit_mb=128,
     )
 
     assert result.status == PythonExecutionStatus.SUCCESS
-    assert (tmp_path / "solution.py").read_text(encoding="utf-8") == "print(input())\n"
+    assert (workspace_dir / "solution.py").read_text(encoding="utf-8") == "print(input())\n"
 
     command = captured_commands[0]
     assert command[:2] == ["docker", "run"]
-    assert "-i" in command
     assert "--network" in command
     assert "none" in command
+    assert "--read-only" in command
+    assert "--tmpfs" in command
+    assert "--cap-drop" in command
+    assert "--security-opt" in command
     assert "-v" in command
+    assert f"contester_judge_workspace:{tmp_path}:rw" in command
     assert "contester-judge:local" in command
     assert "python3" in command
-    assert "/workspace/solution.py" in command
     assert captured_inputs[0] == "3\n"
 
 
@@ -61,13 +70,19 @@ def test_execute_python_timeout_forces_container_cleanup(tmp_path, monkeypatch) 
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    runner = DockerRunner(image="contester-judge:local", docker_binary="docker")
+    workspace_dir = tmp_path / "job-2"
+    runner = DockerRunner(
+        image="contester-judge:local",
+        docker_binary="docker",
+        shared_volume_name="contester_judge_workspace",
+        shared_mount_path=str(tmp_path),
+    )
 
     result = runner.execute_python(
         source_code="while True:\n    pass\n",
         input_data="",
         time_limit_ms=100,
-        workspace_dir=tmp_path,
+        workspace_dir=workspace_dir,
         memory_limit_mb=128,
     )
 
@@ -89,11 +104,17 @@ def test_compile_cpp_returns_compilation_error_on_nonzero_exit(tmp_path, monkeyp
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    runner = DockerRunner(image="contester-judge:local", docker_binary="docker")
+    workspace_dir = tmp_path / "job-3"
+    runner = DockerRunner(
+        image="contester-judge:local",
+        docker_binary="docker",
+        shared_volume_name="contester_judge_workspace",
+        shared_mount_path=str(tmp_path),
+    )
 
     result = runner.compile_cpp(
         source_code="#include <iostream>\nint main(){ std::cout << 1 return 0; }\n",
-        workspace_dir=tmp_path,
+        workspace_dir=workspace_dir,
         compiler="g++",
         timeout_sec=15,
         memory_limit_mb=128,

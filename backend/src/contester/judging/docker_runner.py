@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 import time
 import uuid
@@ -27,9 +28,18 @@ def _timeout_stream_to_text(value: str | bytes | None) -> str:
 
 
 class DockerRunner:
-    def __init__(self, *, image: str, docker_binary: str = "docker") -> None:
+    def __init__(
+        self,
+        *,
+        image: str,
+        docker_binary: str = "docker",
+        shared_volume_name: str,
+        shared_mount_path: str,
+    ) -> None:
         self.image = image
         self.docker_binary = docker_binary
+        self.shared_volume_name = shared_volume_name
+        self.shared_mount_path = Path(shared_mount_path)
 
     def execute_python(
         self,
@@ -40,6 +50,8 @@ class DockerRunner:
         workspace_dir: Path,
         memory_limit_mb: int,
     ) -> PythonExecutionResult:
+        self._prepare_workspace(workspace_dir)
+
         source_path = workspace_dir / "solution.py"
         source_path.write_text(source_code, encoding="utf-8")
 
@@ -52,7 +64,7 @@ class DockerRunner:
             self.image,
             "python3",
             "-I",
-            "/workspace/solution.py",
+            self._container_path_for(source_path),
         ]
 
         started_at = time.monotonic()
@@ -102,6 +114,8 @@ class DockerRunner:
         timeout_sec: int,
         memory_limit_mb: int,
     ) -> CppCompilationResult:
+        self._prepare_workspace(workspace_dir)
+
         source_path = workspace_dir / "solution.cpp"
         binary_path = workspace_dir / "solution"
 
@@ -118,8 +132,8 @@ class DockerRunner:
             "-std=c++17",
             "-O2",
             "-o",
-            "/workspace/solution",
-            "/workspace/solution.cpp",
+            self._container_path_for(binary_path),
+            self._container_path_for(source_path),
         ]
 
         started_at = time.monotonic()
@@ -187,6 +201,8 @@ class DockerRunner:
         workspace_dir: Path,
         memory_limit_mb: int,
     ) -> CppExecutionResult:
+        self._prepare_workspace(workspace_dir)
+
         container_name = self._make_container_name("cpp-run")
         command = self._build_docker_run_command(
             workspace_dir=workspace_dir,
@@ -194,7 +210,7 @@ class DockerRunner:
             memory_limit_mb=max(memory_limit_mb, 128),
         ) + [
             self.image,
-            f"/workspace/{binary_path.name}",
+            self._container_path_for(binary_path),
         ]
 
         started_at = time.monotonic()
@@ -242,9 +258,9 @@ class DockerRunner:
         container_name: str,
         memory_limit_mb: int,
     ) -> list[str]:
-        workspace_mount = f"{workspace_dir.resolve()}:/workspace:rw"
+        workdir = self._container_path_for(workspace_dir)
 
-        command = [
+        return [
             self.docker_binary,
             "run",
             "--rm",
@@ -257,32 +273,38 @@ class DockerRunner:
             "1.0",
             "--memory",
             f"{memory_limit_mb}m",
+            "--memory-swap",
+            f"{memory_limit_mb}m",
             "--pids-limit",
             "128",
             "--cap-drop",
             "ALL",
             "--security-opt",
             "no-new-privileges",
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=64m",
+            "--ulimit",
+            "nofile=64:64",
             "-v",
-            workspace_mount,
+            f"{self.shared_volume_name}:{self.shared_mount_path}:rw",
             "-w",
-            "/workspace",
+            workdir,
         ]
 
-        command.extend(self._build_user_flags())
-        return command
+    def _prepare_workspace(self, workspace_dir: Path) -> None:
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(workspace_dir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
 
-    def _build_user_flags(self) -> list[str]:
-        if os.name == "nt":
-            return []
+    def _container_path_for(self, path: Path) -> str:
+        try:
+            relative = path.resolve().relative_to(self.shared_mount_path.resolve())
+        except ValueError as error:
+            raise RuntimeError(
+                f"Workspace path {path!s} is outside shared mount path {self.shared_mount_path!s}."
+            ) from error
 
-        getuid = getattr(os, "getuid", None)
-        getgid = getattr(os, "getgid", None)
-
-        if getuid is None or getgid is None:
-            return []
-
-        return ["--user", f"{getuid()}:{getgid()}"]
+        return str(self.shared_mount_path / relative)
 
     def _run_command(
         self,

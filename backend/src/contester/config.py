@@ -61,6 +61,8 @@ class Settings:
     judge_execution_backend: str
     judge_docker_binary: str
     judge_docker_image: str
+    judge_docker_shared_volume: str
+    judge_docker_shared_mount_path: str
     judge_poll_interval_sec: int
     judge_running_submission_timeout_sec: int
     json_sort_keys: bool = False
@@ -88,6 +90,8 @@ class Settings:
             "JUDGE_EXECUTION_BACKEND": self.judge_execution_backend,
             "JUDGE_DOCKER_BINARY": self.judge_docker_binary,
             "JUDGE_DOCKER_IMAGE": self.judge_docker_image,
+            "JUDGE_DOCKER_SHARED_VOLUME": self.judge_docker_shared_volume,
+            "JUDGE_DOCKER_SHARED_MOUNT_PATH": self.judge_docker_shared_mount_path,
             "JUDGE_POLL_INTERVAL_SEC": self.judge_poll_interval_sec,
             "JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC": self.judge_running_submission_timeout_sec,
         }
@@ -163,6 +167,20 @@ def get_settings(environment: str | None = None) -> Settings:
     if not judge_docker_image:
         raise ValueError("JUDGE_DOCKER_IMAGE must not be empty.")
 
+    judge_docker_shared_volume = os.getenv(
+        "JUDGE_DOCKER_SHARED_VOLUME",
+        "contester_judge_workspace",
+    ).strip()
+    if not judge_docker_shared_volume:
+        raise ValueError("JUDGE_DOCKER_SHARED_VOLUME must not be empty.")
+
+    judge_docker_shared_mount_path = os.getenv(
+        "JUDGE_DOCKER_SHARED_MOUNT_PATH",
+        "/judge-shared",
+    ).strip()
+    if not judge_docker_shared_mount_path.startswith("/"):
+        raise ValueError("JUDGE_DOCKER_SHARED_MOUNT_PATH must be an absolute Unix path.")
+
     judge_poll_interval_sec = _read_int("JUDGE_POLL_INTERVAL_SEC", 2)
     if judge_poll_interval_sec < 1:
         raise ValueError("JUDGE_POLL_INTERVAL_SEC must be at least 1.")
@@ -199,6 +217,8 @@ def get_settings(environment: str | None = None) -> Settings:
         judge_execution_backend=judge_execution_backend,
         judge_docker_binary=judge_docker_binary,
         judge_docker_image=judge_docker_image,
+        judge_docker_shared_volume=judge_docker_shared_volume,
+        judge_docker_shared_mount_path=judge_docker_shared_mount_path,
         judge_poll_interval_sec=judge_poll_interval_sec,
         judge_running_submission_timeout_sec=judge_running_submission_timeout_sec,
     )

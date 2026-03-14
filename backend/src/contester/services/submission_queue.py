@@ -21,6 +21,8 @@ class SubmissionQueueService:
         execution_backend: str,
         docker_binary: str,
         docker_image: str,
+        docker_shared_volume: str,
+        docker_shared_mount_path: str,
         cxx_compiler: str,
         cpp_compile_timeout_sec: int,
         running_timeout_sec: int,
@@ -30,6 +32,8 @@ class SubmissionQueueService:
             execution_backend=execution_backend,
             docker_binary=docker_binary,
             docker_image=docker_image,
+            docker_shared_volume=docker_shared_volume,
+            docker_shared_mount_path=docker_shared_mount_path,
             cxx_compiler=cxx_compiler,
             cpp_compile_timeout_sec=cpp_compile_timeout_sec,
         )
@@ -42,6 +46,8 @@ class SubmissionQueueService:
             execution_backend=current_app.config["JUDGE_EXECUTION_BACKEND"],
             docker_binary=current_app.config["JUDGE_DOCKER_BINARY"],
             docker_image=current_app.config["JUDGE_DOCKER_IMAGE"],
+            docker_shared_volume=current_app.config["JUDGE_DOCKER_SHARED_VOLUME"],
+            docker_shared_mount_path=current_app.config["JUDGE_DOCKER_SHARED_MOUNT_PATH"],
             cxx_compiler=current_app.config["CXX_COMPILER"],
             cpp_compile_timeout_sec=current_app.config["CPP_COMPILE_TIMEOUT_SEC"],
             running_timeout_sec=int(
