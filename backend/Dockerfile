@@ -16,6 +16,7 @@ COPY docker ./docker
 
 RUN python -m pip install --upgrade pip \
     && pip install -e . \
+    && sed -i 's/\r$//' /app/docker/entrypoint-web.sh /app/docker/entrypoint-worker.sh \
     && useradd --create-home --shell /bin/bash appuser \
     && mkdir -p /app/.runtime \
     && chown -R appuser:appuser /app \
