@@ -1,8 +1,11 @@
-__pycache__/
+.git
+.gitignore
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.runtime
+tests
 *.pyc
 *.pyo
 *.pyd
-.pytest_cache/
-.ruff_cache/
-.venv/
-tests/

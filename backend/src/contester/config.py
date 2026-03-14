@@ -23,6 +23,14 @@ def _read_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _read_optional_bool(name: str) -> bool | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _read_int(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None:
@@ -166,6 +174,13 @@ def get_settings(environment: str | None = None) -> Settings:
     if judge_running_submission_timeout_sec < 1:
         raise ValueError("JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC must be at least 1.")
 
+    session_cookie_secure_override = _read_optional_bool("SESSION_COOKIE_SECURE")
+    session_cookie_secure = (
+        session_cookie_secure_override
+        if session_cookie_secure_override is not None
+        else resolved_environment == "production"
+    )
+
     return Settings(
         app_name=os.getenv("APP_NAME", "contester-backend"),
         environment=resolved_environment,
@@ -175,7 +190,7 @@ def get_settings(environment: str | None = None) -> Settings:
         secret_key=secret_key,
         database_uri=database_uri,
         sqlalchemy_engine_options=sqlalchemy_engine_options,
-        session_cookie_secure=resolved_environment == "production",
+        session_cookie_secure=session_cookie_secure,
         session_lifetime=timedelta(hours=12),
         judge_workspace_dir=judge_workspace_dir,
         max_source_code_length=max_source_code_length,

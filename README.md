@@ -1,0 +1,93 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: contester-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contester}
+      POSTGRES_USER: ${POSTGRES_USER:-contester}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contester}
+    volumes:
+      - contester_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-contester} -d ${POSTGRES_DB:-contester}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+    container_name: contester-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_NAME: contester-backend
+      SECRET_KEY: ${SECRET_KEY:-change-me-local-network-secret}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contester}:${POSTGRES_PASSWORD:-contester}@db:5432/${POSTGRES_DB:-contester}
+      PORT: 8000
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      WEB_THREADS: ${WEB_THREADS:-4}
+      WEB_TIMEOUT: ${WEB_TIMEOUT:-120}
+      JUDGE_EXECUTION_BACKEND: local
+      CXX_COMPILER: g++
+      CPP_COMPILE_TIMEOUT_SEC: ${CPP_COMPILE_TIMEOUT_SEC:-15}
+      JUDGE_POLL_INTERVAL_SEC: ${JUDGE_POLL_INTERVAL_SEC:-2}
+      JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: ${JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC:-300}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  judge-worker:
+    build:
+      context: ./backend
+    container_name: contester-judge-worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_NAME: contester-backend
+      SECRET_KEY: ${SECRET_KEY:-change-me-local-network-secret}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contester}:${POSTGRES_PASSWORD:-contester}@db:5432/${POSTGRES_DB:-contester}
+      JUDGE_EXECUTION_BACKEND: local
+      CXX_COMPILER: g++
+      CPP_COMPILE_TIMEOUT_SEC: ${CPP_COMPILE_TIMEOUT_SEC:-15}
+      JUDGE_POLL_INTERVAL_SEC: ${JUDGE_POLL_INTERVAL_SEC:-2}
+      JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: ${JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC:-300}
+    command: ["/app/docker/entrypoint-worker.sh"]
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: contester-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  contester_postgres_data:

@@ -152,6 +152,7 @@ def serialize_submission_summary(submission: Submission) -> dict[str, object]:
         "judged_at": _serialize_optional_datetime(submission.judged_at),
         "problem": serialize_problem_summary(submission.problem),
         "contest": serialize_contest_summary(submission.problem.contest),
+        "user": serialize_user_summary(submission.user),
     }
 
 
@@ -160,5 +161,4 @@ def serialize_submission(submission: Submission) -> dict[str, object]:
         **serialize_submission_summary(submission),
         "source_code": submission.source_code,
         "judge_log": submission.judge_log,
-        "user": serialize_user_summary(submission.user),
     }
