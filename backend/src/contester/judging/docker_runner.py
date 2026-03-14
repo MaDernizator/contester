@@ -40,7 +40,6 @@ class DockerRunner:
         self.docker_binary = docker_binary
         self.shared_volume_name = shared_volume_name
         self.shared_mount_path = Path(shared_mount_path)
-        self._resolved_volume_mountpoint: Path | None = None
 
     def execute_python(
         self,
@@ -56,16 +55,17 @@ class DockerRunner:
         source_path = workspace_dir / "solution.py"
         source_path.write_text(source_code, encoding="utf-8")
 
+        container_workspace_dir = self._container_workspace_dir(workspace_dir)
         container_name = self._make_container_name("python")
         command = self._build_docker_run_command(
-            workspace_dir=workspace_dir,
+            container_workspace_dir=container_workspace_dir,
             container_name=container_name,
             memory_limit_mb=max(memory_limit_mb, 128),
         ) + [
             self.image,
             "python3",
             "-I",
-            "/workspace/solution.py",
+            str(container_workspace_dir / "solution.py"),
         ]
 
         started_at = time.monotonic()
@@ -122,9 +122,10 @@ class DockerRunner:
 
         source_path.write_text(source_code, encoding="utf-8")
 
+        container_workspace_dir = self._container_workspace_dir(workspace_dir)
         container_name = self._make_container_name("cpp-compile")
         command = self._build_docker_run_command(
-            workspace_dir=workspace_dir,
+            container_workspace_dir=container_workspace_dir,
             container_name=container_name,
             memory_limit_mb=max(memory_limit_mb * 2, 256),
         ) + [
@@ -133,8 +134,8 @@ class DockerRunner:
             "-std=c++17",
             "-O2",
             "-o",
-            "/workspace/solution",
-            "/workspace/solution.cpp",
+            str(container_workspace_dir / "solution"),
+            str(container_workspace_dir / "solution.cpp"),
         ]
 
         started_at = time.monotonic()
@@ -204,14 +205,15 @@ class DockerRunner:
     ) -> CppExecutionResult:
         self._prepare_workspace(workspace_dir)
 
+        container_workspace_dir = self._container_workspace_dir(workspace_dir)
         container_name = self._make_container_name("cpp-run")
         command = self._build_docker_run_command(
-            workspace_dir=workspace_dir,
+            container_workspace_dir=container_workspace_dir,
             container_name=container_name,
             memory_limit_mb=max(memory_limit_mb, 128),
         ) + [
             self.image,
-            "/workspace/solution",
+            str(container_workspace_dir / binary_path.name),
         ]
 
         started_at = time.monotonic()
@@ -255,12 +257,10 @@ class DockerRunner:
     def _build_docker_run_command(
         self,
         *,
-        workspace_dir: Path,
+        container_workspace_dir: Path,
         container_name: str,
         memory_limit_mb: int,
     ) -> list[str]:
-        daemon_workspace_dir = self._resolve_daemon_workspace_dir(workspace_dir)
-
         return [
             self.docker_binary,
             "run",
@@ -288,18 +288,16 @@ class DockerRunner:
             "--ulimit",
             "nofile=1024:1024",
             "-v",
-            f"{daemon_workspace_dir}:/workspace:rw",
+            f"{self.shared_volume_name}:{self.shared_mount_path}:rw",
             "-w",
-            "/workspace",
+            str(container_workspace_dir),
         ]
 
     def _prepare_workspace(self, workspace_dir: Path) -> None:
         workspace_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(workspace_dir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
 
-    def _resolve_daemon_workspace_dir(self, workspace_dir: Path) -> Path:
-        volume_mountpoint = self._get_shared_volume_mountpoint()
-
+    def _container_workspace_dir(self, workspace_dir: Path) -> Path:
         try:
             relative_workspace_dir = workspace_dir.resolve().relative_to(
                 self.shared_mount_path.resolve()
@@ -310,52 +308,7 @@ class DockerRunner:
                 f"{self.shared_mount_path!s}."
             ) from error
 
-        daemon_workspace_dir = volume_mountpoint / relative_workspace_dir
-        daemon_workspace_dir.mkdir(parents=True, exist_ok=True)
-        return daemon_workspace_dir
-
-    def _get_shared_volume_mountpoint(self) -> Path:
-        if self._resolved_volume_mountpoint is not None:
-            return self._resolved_volume_mountpoint
-
-        command = [
-            self.docker_binary,
-            "volume",
-            "inspect",
-            "--format",
-            "{{ .Mountpoint }}",
-            self.shared_volume_name,
-        ]
-
-        try:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except FileNotFoundError as error:
-            raise RuntimeError(
-                f"Docker binary {self.docker_binary!r} is not available."
-            ) from error
-        except OSError as error:
-            raise RuntimeError(f"Failed to inspect Docker volume: {error}") from error
-
-        if completed.returncode != 0:
-            raise RuntimeError(
-                completed.stderr.strip()
-                or f"Failed to inspect Docker volume {self.shared_volume_name!r}."
-            )
-
-        mountpoint = Path(completed.stdout.strip())
-        if not mountpoint.is_absolute():
-            raise RuntimeError(
-                f"Invalid Docker volume mountpoint returned for {self.shared_volume_name!r}: "
-                f"{mountpoint!s}"
-            )
-
-        self._resolved_volume_mountpoint = mountpoint
-        return mountpoint
+        return self.shared_mount_path / relative_workspace_dir
 
     def _run_command(
         self,
