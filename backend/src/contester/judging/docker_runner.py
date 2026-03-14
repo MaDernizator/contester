@@ -40,6 +40,7 @@ class DockerRunner:
         self.docker_binary = docker_binary
         self.shared_volume_name = shared_volume_name
         self.shared_mount_path = Path(shared_mount_path)
+        self._resolved_volume_mountpoint: Path | None = None
 
     def execute_python(
         self,
@@ -64,7 +65,7 @@ class DockerRunner:
             self.image,
             "python3",
             "-I",
-            self._container_path_for(source_path),
+            "/workspace/solution.py",
         ]
 
         started_at = time.monotonic()
@@ -132,8 +133,8 @@ class DockerRunner:
             "-std=c++17",
             "-O2",
             "-o",
-            self._container_path_for(binary_path),
-            self._container_path_for(source_path),
+            "/workspace/solution",
+            "/workspace/solution.cpp",
         ]
 
         started_at = time.monotonic()
@@ -210,7 +211,7 @@ class DockerRunner:
             memory_limit_mb=max(memory_limit_mb, 128),
         ) + [
             self.image,
-            self._container_path_for(binary_path),
+            "/workspace/solution",
         ]
 
         started_at = time.monotonic()
@@ -258,7 +259,7 @@ class DockerRunner:
         container_name: str,
         memory_limit_mb: int,
     ) -> list[str]:
-        workdir = self._container_path_for(workspace_dir)
+        daemon_workspace_dir = self._resolve_daemon_workspace_dir(workspace_dir)
 
         return [
             self.docker_binary,
@@ -285,26 +286,76 @@ class DockerRunner:
             "--tmpfs",
             "/tmp:rw,noexec,nosuid,size=64m",
             "--ulimit",
-            "nofile=64:64",
+            "nofile=1024:1024",
             "-v",
-            f"{self.shared_volume_name}:{self.shared_mount_path}:rw",
+            f"{daemon_workspace_dir}:/workspace:rw",
             "-w",
-            workdir,
+            "/workspace",
         ]
 
     def _prepare_workspace(self, workspace_dir: Path) -> None:
         workspace_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(workspace_dir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
 
-    def _container_path_for(self, path: Path) -> str:
+    def _resolve_daemon_workspace_dir(self, workspace_dir: Path) -> Path:
+        volume_mountpoint = self._get_shared_volume_mountpoint()
+
         try:
-            relative = path.resolve().relative_to(self.shared_mount_path.resolve())
+            relative_workspace_dir = workspace_dir.resolve().relative_to(
+                self.shared_mount_path.resolve()
+            )
         except ValueError as error:
             raise RuntimeError(
-                f"Workspace path {path!s} is outside shared mount path {self.shared_mount_path!s}."
+                f"Workspace path {workspace_dir!s} is outside shared mount path "
+                f"{self.shared_mount_path!s}."
             ) from error
 
-        return str(self.shared_mount_path / relative)
+        daemon_workspace_dir = volume_mountpoint / relative_workspace_dir
+        daemon_workspace_dir.mkdir(parents=True, exist_ok=True)
+        return daemon_workspace_dir
+
+    def _get_shared_volume_mountpoint(self) -> Path:
+        if self._resolved_volume_mountpoint is not None:
+            return self._resolved_volume_mountpoint
+
+        command = [
+            self.docker_binary,
+            "volume",
+            "inspect",
+            "--format",
+            "{{ .Mountpoint }}",
+            self.shared_volume_name,
+        ]
+
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError as error:
+            raise RuntimeError(
+                f"Docker binary {self.docker_binary!r} is not available."
+            ) from error
+        except OSError as error:
+            raise RuntimeError(f"Failed to inspect Docker volume: {error}") from error
+
+        if completed.returncode != 0:
+            raise RuntimeError(
+                completed.stderr.strip()
+                or f"Failed to inspect Docker volume {self.shared_volume_name!r}."
+            )
+
+        mountpoint = Path(completed.stdout.strip())
+        if not mountpoint.is_absolute():
+            raise RuntimeError(
+                f"Invalid Docker volume mountpoint returned for {self.shared_volume_name!r}: "
+                f"{mountpoint!s}"
+            )
+
+        self._resolved_volume_mountpoint = mountpoint
+        return mountpoint
 
     def _run_command(
         self,
