@@ -219,14 +219,30 @@ pre {
   align-items: start;
 }
 
-.dashboard-grid--admin {
-  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.9fr);
-}
-
 .dashboard-grid__main,
 .dashboard-grid__side {
   display: grid;
   gap: 24px;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.95fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.workspace-grid__main,
+.workspace-grid__side {
+  display: grid;
+  gap: 24px;
+}
+
+.workspace-two-column {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+  gap: 24px;
+  align-items: start;
 }
 
 .page-head {
@@ -269,6 +285,10 @@ pre {
   gap: 16px;
 }
 
+.stats-grid--compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .stat-card {
   padding: 18px 20px;
   border-radius: var(--radius-md);
@@ -289,6 +309,11 @@ pre {
   display: block;
   font-size: 1.5rem;
   letter-spacing: -0.03em;
+}
+
+.stat-card__value--small {
+  font-size: 1rem;
+  line-height: 1.35;
 }
 
 .landing-grid {
@@ -500,7 +525,8 @@ pre {
 
 .list-card,
 .selectable-card,
-.contest-card {
+.contest-card,
+.action-card {
   border: 1px solid var(--border);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.86);
@@ -575,6 +601,39 @@ pre {
   gap: 14px;
   align-items: center;
   margin-top: 18px;
+}
+
+.action-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.action-card {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.action-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.action-card--static:hover {
+  transform: none;
+}
+
+.action-card strong {
+  font-size: 1rem;
+}
+
+.action-card span {
+  color: #475569;
 }
 
 .inline-link {
@@ -729,13 +788,16 @@ pre {
   color: #b45309;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .landing-grid,
   .dashboard-grid,
-  .dashboard-grid--admin,
+  .workspace-grid,
+  .workspace-two-column,
   .two-column-grid,
   .contest-grid,
-  .stats-grid {
+  .stats-grid,
+  .stats-grid--compact,
+  .action-card-grid {
     grid-template-columns: 1fr;
   }
 

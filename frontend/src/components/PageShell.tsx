@@ -25,6 +25,12 @@ export function PageShell({ user, onLogout, children }: PageShellProps) {
             <NavLink to="/" className="top-nav__link">
               Home
             </NavLink>
+
+            {user?.role === "admin" ? (
+              <NavLink to="/admin" className="top-nav__link">
+                Admin workspace
+              </NavLink>
+            ) : null}
           </nav>
 
           <div className="user-box">

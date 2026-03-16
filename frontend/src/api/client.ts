@@ -185,11 +185,39 @@ export async function createAdminContest(input: {
   return payload.contest;
 }
 
+export async function updateAdminContest(
+  contestId: string,
+  input: {
+    title: string;
+    slug: string;
+    description?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    status: "draft" | "published" | "archived";
+  },
+): Promise<Contest> {
+  const payload = await request<{ contest: Contest }>(
+    `/api/v1/admin/contests/${contestId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+  return payload.contest;
+}
+
 export async function getAdminProblems(contestId: string): Promise<ProblemSummary[]> {
   const payload = await request<{ problems: ProblemSummary[] }>(
     `/api/v1/admin/contests/${contestId}/problems`,
   );
   return payload.problems;
+}
+
+export async function getAdminProblem(problemId: string): Promise<Problem> {
+  const payload = await request<{ problem: Problem }>(
+    `/api/v1/admin/problems/${problemId}`,
+  );
+  return payload.problem;
 }
 
 export async function createAdminProblem(input: {
@@ -230,11 +258,45 @@ export async function createAdminProblem(input: {
   return payload.problem;
 }
 
+export async function updateAdminProblem(
+  problemId: string,
+  input: {
+    code: string;
+    title: string;
+    statement: string;
+    input_specification?: string | null;
+    output_specification?: string | null;
+    notes?: string | null;
+    sample_input?: string | null;
+    sample_output?: string | null;
+    time_limit_ms: number;
+    memory_limit_mb: number;
+    position: number;
+    status: "draft" | "published" | "archived";
+  },
+): Promise<Problem> {
+  const payload = await request<{ problem: Problem }>(
+    `/api/v1/admin/problems/${problemId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+  return payload.problem;
+}
+
 export async function getAdminTestCases(problemId: string): Promise<TestCaseSummary[]> {
   const payload = await request<{ test_cases: TestCaseSummary[] }>(
     `/api/v1/admin/problems/${problemId}/test-cases`,
   );
   return payload.test_cases;
+}
+
+export async function getAdminTestCase(testCaseId: string): Promise<TestCase> {
+  const payload = await request<{ test_case: TestCase }>(
+    `/api/v1/admin/test-cases/${testCaseId}`,
+  );
+  return payload.test_case;
 }
 
 export async function createAdminTestCase(input: {
@@ -261,7 +323,66 @@ export async function createAdminTestCase(input: {
   return payload.test_case;
 }
 
+export async function updateAdminTestCase(
+  testCaseId: string,
+  input: {
+    input_data: string;
+    expected_output: string;
+    position: number;
+    is_sample: boolean;
+    is_active: boolean;
+  },
+): Promise<TestCase> {
+  const payload = await request<{ test_case: TestCase }>(
+    `/api/v1/admin/test-cases/${testCaseId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+  return payload.test_case;
+}
+
 export async function getAdminQueueStatus(): Promise<QueueStatus> {
   const payload = await request<{ queue: QueueStatus }>("/api/v1/admin/submissions/queue");
   return payload.queue;
+}
+
+export async function getAdminSubmissions(filters?: {
+  contest_slug?: string;
+  problem_code?: string;
+  username?: string;
+  language?: string;
+  status?: string;
+  verdict?: string;
+}): Promise<SubmissionSummary[]> {
+  const params = new URLSearchParams();
+
+  if (filters) {
+    for (const [key, value] of Object.entries(filters)) {
+      if (value && value.trim()) {
+        params.set(key, value.trim());
+      }
+    }
+  }
+
+  const query = params.toString();
+  const path = query
+    ? `/api/v1/admin/submissions?${query}`
+    : "/api/v1/admin/submissions";
+
+  const payload = await request<{ submissions: SubmissionSummary[] }>(path);
+  return payload.submissions;
+}
+
+export async function rejudgeAdminSubmission(
+  submissionId: string,
+): Promise<Submission> {
+  const payload = await request<{ submission: Submission }>(
+    `/api/v1/admin/submissions/${submissionId}/rejudge`,
+    {
+      method: "POST",
+    },
+  );
+  return payload.submission;
 }

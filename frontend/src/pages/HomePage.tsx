@@ -9,7 +9,6 @@ import {
 import type { Contest, User } from "../api/types";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
-import { AdminTools } from "../features/admin/AdminTools";
 import { SubmissionsPanel } from "../features/submissions/SubmissionsPanel";
 
 interface HomePageProps {
@@ -119,6 +118,33 @@ function ContestOverview({ contests }: { contests: Contest[] }) {
             </div>
           </article>
         ))}
+      </div>
+    </Panel>
+  );
+}
+
+function AdminCommandCenter() {
+  return (
+    <Panel
+      title="Admin command center"
+      subtitle="Open the full organizer workspace for contest operations and judge monitoring."
+    >
+      <div className="action-card-grid">
+        <Link to="/admin" className="action-card">
+          <strong>Open admin workspace</strong>
+          <span>
+            Manage contests, problems, test cases, submissions, queue state, and
+            rejudge operations.
+          </span>
+        </Link>
+
+        <div className="action-card action-card--static">
+          <strong>Recommended workflow</strong>
+          <span>
+            Create contest → add problems → configure test cases → publish →
+            monitor queue and submissions.
+          </span>
+        </div>
       </div>
     </Panel>
   );
@@ -462,7 +488,7 @@ export function HomePage({
           </h1>
           <p className="page-head__subtitle">
             {user.role === "admin"
-              ? "Manage contests, monitor the queue, and keep the judging pipeline healthy."
+              ? "Manage contests, monitor judging, and coordinate the whole event from one place."
               : "Browse contests, solve problems, and track the state of your submissions."}
           </p>
         </div>
@@ -492,8 +518,9 @@ export function HomePage({
       ) : null}
 
       {user.role === "admin" ? (
-        <div className="dashboard-grid dashboard-grid--admin">
+        <div className="dashboard-grid">
           <div className="dashboard-grid__main">
+            <AdminCommandCenter />
             {contestsLoading ? (
               <Panel title="Available contests">
                 <p className="muted">Loading contests...</p>
@@ -501,8 +528,6 @@ export function HomePage({
             ) : (
               <ContestOverview contests={contests} />
             )}
-
-            <AdminTools />
           </div>
 
           <aside className="dashboard-grid__side">

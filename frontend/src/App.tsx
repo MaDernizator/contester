@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { getCurrentUser, isApiError, logout } from "./api/client";
 import type { User } from "./api/types";
 import { PageShell } from "./components/PageShell";
+import { AdminWorkspacePage } from "./pages/AdminWorkspacePage";
 import { ContestPage } from "./pages/ContestPage";
 import { HomePage } from "./pages/HomePage";
 import { ProblemPage } from "./pages/ProblemPage";
@@ -59,6 +60,7 @@ export default function App() {
               />
             }
           />
+          <Route path="/admin" element={<AdminWorkspacePage user={user} />} />
           <Route path="/contests/:contestSlug" element={<ContestPage user={user} />} />
           <Route
             path="/contests/:contestSlug/problems/:problemCode"
