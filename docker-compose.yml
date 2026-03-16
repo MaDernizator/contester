@@ -110,4 +110,6 @@ services:
 
 volumes:
   contester_postgres_data:
+    name: contester_postgres_data
   contester_judge_workspace:
+    name: contester_judge_workspace
