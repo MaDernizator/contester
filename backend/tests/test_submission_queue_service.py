@@ -102,6 +102,68 @@ def _create_submission(
     return submission
 
 
+def test_claim_pending_submission_ids_marks_oldest_items_running(app) -> None:
+    with app.app_context():
+        admin = _create_user(username="admin-queue-batch", password="verystrong123", role=UserRole.ADMIN)
+        participant = _create_user(
+            username="participant-queue-batch",
+            password="verystrong123",
+            role=UserRole.PARTICIPANT,
+        )
+        contest = _create_contest(
+            creator=admin,
+            title="Queue Contest",
+            slug="queue-batch-contest",
+            status=ContestStatus.PUBLISHED,
+        )
+        problem = _create_problem(
+            contest=contest,
+            code="A",
+            title="A + B",
+            position=1,
+            status=ProblemStatus.PUBLISHED,
+        )
+
+        first = _create_submission(
+            user=participant,
+            problem=problem,
+            status=SubmissionStatus.PENDING,
+            verdict=SubmissionVerdict.PENDING,
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=3),
+        )
+        second = _create_submission(
+            user=participant,
+            problem=problem,
+            status=SubmissionStatus.PENDING,
+            verdict=SubmissionVerdict.PENDING,
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=2),
+        )
+        third = _create_submission(
+            user=participant,
+            problem=problem,
+            status=SubmissionStatus.PENDING,
+            verdict=SubmissionVerdict.PENDING,
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+
+        service = SubmissionQueueService.from_app_config()
+        claimed_ids = service.claim_pending_submission_ids(limit=2)
+
+        assert claimed_ids == [first.id, second.id]
+
+        first_reloaded = db.session.get(Submission, first.id)
+        second_reloaded = db.session.get(Submission, second.id)
+        third_reloaded = db.session.get(Submission, third.id)
+
+        assert first_reloaded is not None
+        assert second_reloaded is not None
+        assert third_reloaded is not None
+
+        assert first_reloaded.status == SubmissionStatus.RUNNING
+        assert second_reloaded.status == SubmissionStatus.RUNNING
+        assert third_reloaded.status == SubmissionStatus.PENDING
+
+
 def test_claim_next_pending_submission_id_marks_oldest_pending_running(app) -> None:
     with app.app_context():
         admin = _create_user(username="admin-queue-claim", password="verystrong123", role=UserRole.ADMIN)
@@ -254,7 +316,7 @@ def test_run_once_claims_submission_and_calls_judge_service(app) -> None:
 
         service.judge_service = FakeJudgeService()
 
-        processed = service.run_once(running_timeout_sec=300)
+        processed = service.run_once()
 
         assert processed == 1
         assert claimed_ids == [pending.id]

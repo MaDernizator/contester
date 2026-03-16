@@ -55,22 +55,35 @@ class SubmissionQueueService:
             ),
         )
 
-    def claim_next_pending_submission_id(self) -> UUID | None:
+    def claim_pending_submission_ids(self, *, limit: int = 1) -> list[UUID]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1.")
+
         statement = (
             select(Submission)
             .where(Submission.status == SubmissionStatus.PENDING)
             .order_by(Submission.created_at.asc(), Submission.id.asc())
             .with_for_update(skip_locked=True)
-            .limit(1)
+            .limit(limit)
         )
 
-        submission = db.session.execute(statement).scalars().first()
-        if submission is None:
-            return None
+        submissions = db.session.execute(statement).scalars().all()
+        if not submissions:
+            return []
 
-        submission.mark_running(total_test_count=0)
+        claimed_ids: list[UUID] = []
+        for submission in submissions:
+            submission.mark_running(total_test_count=0)
+            claimed_ids.append(submission.id)
+
         db.session.commit()
-        return submission.id
+        return claimed_ids
+
+    def claim_next_pending_submission_id(self) -> UUID | None:
+        claimed_ids = self.claim_pending_submission_ids(limit=1)
+        if not claimed_ids:
+            return None
+        return claimed_ids[0]
 
     def requeue_stale_running_submissions(self, *, timeout_sec: int | None = None) -> int:
         effective_timeout_sec = timeout_sec or self.running_timeout_sec

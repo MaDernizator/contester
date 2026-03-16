@@ -87,6 +87,7 @@ services:
       CPP_COMPILE_TIMEOUT_SEC: ${CPP_COMPILE_TIMEOUT_SEC:-15}
       JUDGE_POLL_INTERVAL_SEC: ${JUDGE_POLL_INTERVAL_SEC:-2}
       JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC: ${JUDGE_RUNNING_SUBMISSION_TIMEOUT_SEC:-300}
+      WORKER_PROCESSES: ${WORKER_PROCESSES:-2}
     command: ["/app/docker/entrypoint-worker.sh"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
