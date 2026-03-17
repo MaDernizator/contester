@@ -102,12 +102,12 @@ export interface SubmissionSummary {
   judged_at: string | null;
   problem: ProblemSummary;
   contest: ContestSummary;
+  user: UserSummary;
 }
 
 export interface Submission extends SubmissionSummary {
   source_code: string;
   judge_log: string | null;
-  user: UserSummary;
 }
 
 export interface QueueStatus {
