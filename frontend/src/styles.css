@@ -854,3 +854,102 @@ pre {
     font-size: 2rem;
   }
 }
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.problem-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.problem-layout__main,
+.problem-layout__side {
+  display: grid;
+  gap: 24px;
+}
+
+.editor-toolbar {
+  display: grid;
+  gap: 16px;
+}
+
+.editor-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.submission-callout {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1e3a8a;
+  font-weight: 500;
+}
+
+.hint-list {
+  display: grid;
+  gap: 14px;
+}
+
+.hint-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.hint-card span {
+  color: #475569;
+}
+
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.sample-block {
+  display: grid;
+  gap: 10px;
+}
+
+.sample-block h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.scoreboard-row--current td {
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.scoreboard-cell__meta {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+@media (max-width: 1180px) {
+  .problem-layout,
+  .sample-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .page-actions,
+  .editor-toolbar__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

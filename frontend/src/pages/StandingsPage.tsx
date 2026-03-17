@@ -1,29 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getContestStandings, isApiError } from "../api/client";
-import type { ContestStandings, StandingProblemResult, User } from "../api/types";
+import { getContest, getContestProblems, isApiError } from "../api/client";
+import type { Contest, ProblemSummary, User } from "../api/types";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
 
-interface StandingsPageProps {
+interface ContestPageProps {
   user: User | null;
 }
 
-function renderProblemCell(result: StandingProblemResult) {
-  if (!result.accepted && result.attempt_count === 0) {
-    return "—";
-  }
-
-  if (result.accepted) {
-    return `+${result.wrong_attempts_before_accept > 0 ? result.wrong_attempts_before_accept : ""}`;
-  }
-
-  return `-${result.attempt_count}`;
-}
-
-export function StandingsPage({ user }: StandingsPageProps) {
+export function ContestPage({ user }: ContestPageProps) {
   const { contestSlug } = useParams<{ contestSlug: string }>();
-  const [standings, setStandings] = useState<ContestStandings | null>(null);
+  const [contest, setContest] = useState<Contest | null>(null);
+  const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -37,15 +26,21 @@ export function StandingsPage({ user }: StandingsPageProps) {
       setErrorMessage(null);
 
       try {
-        const data = await getContestStandings(contestSlug);
-        setStandings(data);
+        const [contestData, problemData] = await Promise.all([
+          getContest(contestSlug),
+          getContestProblems(contestSlug),
+        ]);
+        setContest(contestData);
+        setProblems(problemData);
       } catch (error) {
-        setErrorMessage(isApiError(error) ? error.message : "Failed to load standings.");
+        setErrorMessage(isApiError(error) ? error.message : "Failed to load contest.");
       } finally {
         setLoading(false);
       }
     })();
   }, [contestSlug, user]);
+
+  const firstProblem = useMemo(() => problems[0] ?? null, [problems]);
 
   if (!user) {
     return (
@@ -57,86 +52,133 @@ export function StandingsPage({ user }: StandingsPageProps) {
 
   if (loading) {
     return (
-      <Panel title="Standings">
-        <p className="muted">Loading standings...</p>
+      <Panel title="Contest">
+        <p className="muted">Loading contest...</p>
       </Panel>
     );
   }
 
   if (errorMessage) {
     return (
-      <Panel title="Standings">
+      <Panel title="Contest">
         <p className="feedback feedback--error">{errorMessage}</p>
       </Panel>
     );
   }
 
-  if (!standings) {
+  if (!contest) {
     return (
-      <Panel title="Standings">
-        <p className="muted">Standings are unavailable.</p>
+      <Panel title="Contest">
+        <p className="muted">Contest not found.</p>
       </Panel>
     );
   }
 
   return (
     <div className="stack">
-      <Panel
-        title={`Standings — ${standings.contest.title}`}
-        actions={
-          <Link to={`/contests/${standings.contest.slug}`} className="button button--secondary">
-            Back to contest
+      <section className="page-head">
+        <div>
+          <span className="page-head__eyebrow">Contest</span>
+          <h1 className="page-head__title">{contest.title}</h1>
+          <p className="page-head__subtitle">
+            Browse problems, move into solving mode, and follow the live scoreboard.
+          </p>
+        </div>
+
+        <div className="page-actions">
+          <Link
+            to={`/contests/${contest.slug}/standings`}
+            className="button button--secondary"
+          >
+            View standings
           </Link>
-        }
-      >
-        <div className="meta-grid">
-          <span>Contest: {standings.contest.slug}</span>
-          <span>Problems: {standings.problems.length}</span>
-          <span>Generated: {new Date(standings.generated_at).toLocaleString()}</span>
+
+          {firstProblem ? (
+            <Link
+              to={`/contests/${contest.slug}/problems/${firstProblem.code}`}
+              className="button"
+            >
+              Start solving
+            </Link>
+          ) : null}
+        </div>
+      </section>
+
+      <Panel title="Contest overview" subtitle={`Slug: ${contest.slug}`}>
+        <div className="list-card__header">
+          <div className="muted">
+            Phase: {contest.phase}
+          </div>
+          <StatusPill value={contest.status} />
+        </div>
+
+        {contest.description ? <p>{contest.description}</p> : null}
+
+        <div className="stats-grid stats-grid--compact">
+          <div className="stat-card">
+            <span className="stat-card__label">Starts</span>
+            <strong className="stat-card__value stat-card__value--small">
+              {contest.starts_at ? new Date(contest.starts_at).toLocaleString() : "—"}
+            </strong>
+          </div>
+          <div className="stat-card">
+            <span className="stat-card__label">Ends</span>
+            <strong className="stat-card__value stat-card__value--small">
+              {contest.ends_at ? new Date(contest.ends_at).toLocaleString() : "—"}
+            </strong>
+          </div>
+          <div className="stat-card">
+            <span className="stat-card__label">Problems</span>
+            <strong className="stat-card__value">{problems.length}</strong>
+          </div>
+          <div className="stat-card">
+            <span className="stat-card__label">Created by</span>
+            <strong className="stat-card__value stat-card__value--small">
+              {contest.created_by.username}
+            </strong>
+          </div>
         </div>
       </Panel>
 
-      <Panel title="Scoreboard">
-        {standings.rows.length === 0 ? (
-          <p className="muted">No participants in standings yet.</p>
+      <Panel title="Problems" subtitle="Open a task to read the statement and submit a solution.">
+        {problems.length === 0 ? (
+          <p className="muted">No published problems in this contest yet.</p>
         ) : (
-          <div className="table-scroll">
-            <table className="scoreboard-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>User</th>
-                  <th>Solved</th>
-                  <th>Penalty</th>
-                  {standings.problems.map((problem) => (
-                    <th key={problem.id}>{problem.code}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {standings.rows.map((row) => (
-                  <tr key={row.user.id}>
-                    <td>{row.rank}</td>
-                    <td>
-                      <div className="scoreboard-user">
-                        <strong>{row.user.full_name || row.user.username}</strong>
-                        <span className="muted small-text">@{row.user.username}</span>
-                      </div>
-                    </td>
-                    <td>{row.solved_count}</td>
-                    <td>{row.penalty_minutes}</td>
-                    {row.problem_results.map((result) => (
-                      <td key={result.problem.id}>
-                        <div className="scoreboard-cell">
-                          <StatusPill value={result.accepted ? "accepted" : result.last_verdict ?? "pending"} />
-                          <span>{renderProblemCell(result)}</span>
-                        </div>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="contest-grid">
+            {problems.map((problem) => (
+              <article key={problem.id} className="contest-card">
+                <div className="contest-card__header">
+                  <div>
+                    <h3 className="contest-card__title">
+                      {problem.code} — {problem.title}
+                    </h3>
+                    <p className="contest-card__meta">Position: {problem.position}</p>
+                  </div>
+                  <StatusPill value={problem.status} />
+                </div>
+
+                <div className="meta-grid">
+                  <span>Time limit: {problem.time_limit_ms} ms</span>
+                  <span>Memory limit: {problem.memory_limit_mb} MB</span>
+                </div>
+
+                <div className="contest-card__footer">
+                  <Link
+                    className="button button--secondary"
+                    to={`/contests/${contest.slug}/problems/${problem.code}`}
+                  >
+                    Open problem
+                  </Link>
+
+                  <Link
+                    className="inline-link"
+                    to={`/contests/${contest.slug}/problems/${problem.code}`}
+                  >
+                    Solve now
+                  </Link>
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </Panel>
