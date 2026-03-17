@@ -34,6 +34,8 @@ interface AdminWorkspacePageProps {
   user: User | null;
 }
 
+type AdminTab = "overview" | "contests" | "problems" | "test-cases" | "submissions";
+
 interface ContestFormState {
   title: string;
   slug: string;
@@ -74,6 +76,14 @@ interface SubmissionFilterState {
   status: string;
   verdict: string;
 }
+
+const STORAGE_KEYS = {
+  tab: "contester:admin:tab",
+  contestId: "contester:admin:selectedContestId",
+  problemId: "contester:admin:selectedProblemId",
+  testCaseId: "contester:admin:selectedTestCaseId",
+  submissionFilters: "contester:admin:submissionFilters",
+};
 
 const initialQueueStatus: QueueStatus = {
   pending_count: 0,
@@ -162,7 +172,45 @@ function testCaseToForm(testCase: TestCase): TestCaseFormState {
   };
 }
 
+function readStoredTab(): AdminTab {
+  const value = window.localStorage.getItem(STORAGE_KEYS.tab);
+  if (
+    value === "overview" ||
+    value === "contests" ||
+    value === "problems" ||
+    value === "test-cases" ||
+    value === "submissions"
+  ) {
+    return value;
+  }
+
+  return "overview";
+}
+
+function readStoredSubmissionFilters(): SubmissionFilterState {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.submissionFilters);
+    if (!raw) {
+      return initialSubmissionFilters;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<SubmissionFilterState>;
+    return {
+      contest_slug: parsed.contest_slug ?? "",
+      problem_code: parsed.problem_code ?? "",
+      username: parsed.username ?? "",
+      language: parsed.language ?? "",
+      status: parsed.status ?? "",
+      verdict: parsed.verdict ?? "",
+    };
+  } catch {
+    return initialSubmissionFilters;
+  }
+}
+
 export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => readStoredTab());
+
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -171,23 +219,31 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
   const [queueStatus, setQueueStatus] = useState<QueueStatus>(initialQueueStatus);
 
   const [contests, setContests] = useState<Contest[]>([]);
-  const [selectedContestId, setSelectedContestId] = useState("");
+  const [selectedContestId, setSelectedContestId] = useState(
+    () => window.localStorage.getItem(STORAGE_KEYS.contestId) ?? "",
+  );
   const [createContestForm, setCreateContestForm] = useState(initialContestForm);
   const [editContestForm, setEditContestForm] = useState(initialContestForm);
 
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
-  const [selectedProblemId, setSelectedProblemId] = useState("");
+  const [selectedProblemId, setSelectedProblemId] = useState(
+    () => window.localStorage.getItem(STORAGE_KEYS.problemId) ?? "",
+  );
   const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null);
   const [createProblemForm, setCreateProblemForm] = useState(initialProblemForm);
   const [editProblemForm, setEditProblemForm] = useState(initialProblemForm);
 
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([]);
-  const [selectedTestCaseId, setSelectedTestCaseId] = useState("");
+  const [selectedTestCaseId, setSelectedTestCaseId] = useState(
+    () => window.localStorage.getItem(STORAGE_KEYS.testCaseId) ?? "",
+  );
   const [selectedTestCase, setSelectedTestCase] = useState<TestCase | null>(null);
   const [createTestCaseForm, setCreateTestCaseForm] = useState(initialTestCaseForm);
   const [editTestCaseForm, setEditTestCaseForm] = useState(initialTestCaseForm);
 
-  const [submissionFilters, setSubmissionFilters] = useState(initialSubmissionFilters);
+  const [submissionFilters, setSubmissionFilters] = useState<SubmissionFilterState>(
+    () => readStoredSubmissionFilters(),
+  );
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
 
@@ -196,8 +252,53 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     [contests, selectedContestId],
   );
 
+  const selectedProblemSummary = useMemo(
+    () => problems.find((problem) => problem.id === selectedProblemId) ?? null,
+    [problems, selectedProblemId],
+  );
+
+  const selectedTestCaseSummary = useMemo(
+    () => testCases.find((testCase) => testCase.id === selectedTestCaseId) ?? null,
+    [testCases, selectedTestCaseId],
+  );
+
   const queueHasActiveWork =
     queueStatus.pending_count > 0 || queueStatus.running_count > 0;
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.tab, activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (selectedContestId) {
+      window.localStorage.setItem(STORAGE_KEYS.contestId, selectedContestId);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.contestId);
+    }
+  }, [selectedContestId]);
+
+  useEffect(() => {
+    if (selectedProblemId) {
+      window.localStorage.setItem(STORAGE_KEYS.problemId, selectedProblemId);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.problemId);
+    }
+  }, [selectedProblemId]);
+
+  useEffect(() => {
+    if (selectedTestCaseId) {
+      window.localStorage.setItem(STORAGE_KEYS.testCaseId, selectedTestCaseId);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.testCaseId);
+    }
+  }, [selectedTestCaseId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.submissionFilters,
+      JSON.stringify(submissionFilters),
+    );
+  }, [submissionFilters]);
 
   const loadQueueStatus = useCallback(async () => {
     const data = await getAdminQueueStatus();
@@ -295,7 +396,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       await Promise.all([
         loadContests(),
         loadQueueStatus(),
-        loadSubmissions(initialSubmissionFilters),
+        loadSubmissions(submissionFilters),
       ]);
     } catch (error) {
       setErrorMessage(
@@ -396,6 +497,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       setSelectedContestId(created.id);
       setCreateContestForm(initialContestForm);
       setSuccessMessage(`Contest "${created.title}" created.`);
+      setActiveTab("contests");
     } catch (error) {
       setErrorMessage(
         isApiError(error) ? error.message : "Failed to create contest.",
@@ -468,6 +570,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       setSelectedProblemId(created.id);
       setCreateProblemForm(initialProblemForm);
       setSuccessMessage(`Problem "${created.code}" created.`);
+      setActiveTab("problems");
     } catch (error) {
       setErrorMessage(
         isApiError(error) ? error.message : "Failed to create problem.",
@@ -540,6 +643,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       setSelectedTestCaseId(created.id);
       setCreateTestCaseForm(initialTestCaseForm);
       setSuccessMessage(`Test case #${created.position} created.`);
+      setActiveTab("test-cases");
     } catch (error) {
       setErrorMessage(
         isApiError(error) ? error.message : "Failed to create test case.",
@@ -586,6 +690,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
     try {
       await loadSubmissions(submissionFilters);
+      setActiveTab("submissions");
     } catch (error) {
       setErrorMessage(
         isApiError(error) ? error.message : "Failed to load submissions.",
@@ -613,10 +718,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
     try {
       await rejudgeAdminSubmission(submissionId);
-      await Promise.all([
-        loadSubmissions(submissionFilters),
-        loadQueueStatus(),
-      ]);
+      await Promise.all([loadSubmissions(submissionFilters), loadQueueStatus()]);
       setSuccessMessage(`Submission ${submissionId} was queued for rejudge.`);
     } catch (error) {
       setErrorMessage(
@@ -672,100 +774,305 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       ) : null}
 
       <Panel
-        title="Judge queue"
-        subtitle="Operational overview of the asynchronous judging pipeline."
-        actions={
+        title="Workspace navigation"
+        subtitle="Choose an area of responsibility."
+      >
+        <div className="admin-tabs">
           <button
             type="button"
-            className="button button--secondary"
-            onClick={() => void loadQueueStatus()}
+            className={`admin-tab ${activeTab === "overview" ? "admin-tab--active" : ""}`}
+            onClick={() => setActiveTab("overview")}
           >
-            Refresh queue
+            Overview
           </button>
-        }
-      >
-        <div className="stats-grid stats-grid--compact">
-          <div className="stat-card">
-            <span className="stat-card__label">Pending</span>
-            <strong className="stat-card__value">{queueStatus.pending_count}</strong>
-          </div>
-          <div className="stat-card">
-            <span className="stat-card__label">Running</span>
-            <strong className="stat-card__value">{queueStatus.running_count}</strong>
-          </div>
-          <div className="stat-card">
-            <span className="stat-card__label">Finished</span>
-            <strong className="stat-card__value">{queueStatus.finished_count}</strong>
-          </div>
-          <div className="stat-card">
-            <span className="stat-card__label">Oldest pending</span>
-            <strong className="stat-card__value stat-card__value--small">
-              {queueStatus.oldest_pending_created_at
-                ? new Date(queueStatus.oldest_pending_created_at).toLocaleString()
-                : "—"}
-            </strong>
-          </div>
+          <button
+            type="button"
+            className={`admin-tab ${activeTab === "contests" ? "admin-tab--active" : ""}`}
+            onClick={() => setActiveTab("contests")}
+          >
+            Contests
+          </button>
+          <button
+            type="button"
+            className={`admin-tab ${activeTab === "problems" ? "admin-tab--active" : ""}`}
+            onClick={() => setActiveTab("problems")}
+          >
+            Problems
+          </button>
+          <button
+            type="button"
+            className={`admin-tab ${activeTab === "test-cases" ? "admin-tab--active" : ""}`}
+            onClick={() => setActiveTab("test-cases")}
+          >
+            Test cases
+          </button>
+          <button
+            type="button"
+            className={`admin-tab ${activeTab === "submissions" ? "admin-tab--active" : ""}`}
+            onClick={() => setActiveTab("submissions")}
+          >
+            Submissions
+          </button>
         </div>
-
-        {queueHasActiveWork ? (
-          <p className="muted small-text">
-            The judge queue currently has active work in progress.
-          </p>
-        ) : null}
       </Panel>
 
-      <div className="workspace-grid">
-        <div className="workspace-grid__main">
-          <Panel
-            title="Contests"
-            subtitle="Select an existing contest or create a new one."
-            actions={
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={() => void loadContests()}
-              >
-                Reload contests
-              </button>
-            }
-          >
-            <div className="workspace-two-column">
-              <div className="list-stack">
-                {contests.length === 0 ? (
-                  <p className="muted">No contests yet.</p>
-                ) : (
-                  contests.map((contest) => (
-                    <button
-                      key={contest.id}
-                      type="button"
-                      className={`selectable-card ${
-                        contest.id === selectedContestId
-                          ? "selectable-card--active"
-                          : ""
-                      }`}
-                      onClick={() => setSelectedContestId(contest.id)}
-                    >
-                      <div className="list-card__header">
-                        <div>
-                          <strong>{contest.title}</strong>
-                          <div className="muted small-text">{contest.slug}</div>
-                        </div>
-                        <StatusPill value={contest.status} />
-                      </div>
-                    </button>
-                  ))
-                )}
+      {activeTab === "overview" ? (
+        <div className="workspace-grid">
+          <div className="workspace-grid__main">
+            <Panel
+              title="Judge queue"
+              subtitle="Operational overview of the asynchronous judging pipeline."
+              actions={
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => void loadQueueStatus()}
+                >
+                  Refresh queue
+                </button>
+              }
+            >
+              <div className="stats-grid stats-grid--compact">
+                <div className="stat-card">
+                  <span className="stat-card__label">Pending</span>
+                  <strong className="stat-card__value">{queueStatus.pending_count}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-card__label">Running</span>
+                  <strong className="stat-card__value">{queueStatus.running_count}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-card__label">Finished</span>
+                  <strong className="stat-card__value">{queueStatus.finished_count}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-card__label">Oldest pending</span>
+                  <strong className="stat-card__value stat-card__value--small">
+                    {queueStatus.oldest_pending_created_at
+                      ? new Date(queueStatus.oldest_pending_created_at).toLocaleString()
+                      : "—"}
+                  </strong>
+                </div>
               </div>
 
-              <div className="stack">
-                <Panel title="Create contest" subtitle="Add a new contest entity.">
-                  <form className="form-stack" onSubmit={handleCreateContest}>
+              {queueHasActiveWork ? (
+                <p className="muted small-text">
+                  The judge queue currently has active work in progress.
+                </p>
+              ) : null}
+            </Panel>
+
+            <Panel
+              title="Current selection"
+              subtitle="The workspace remembers these entities between page reloads."
+            >
+              <div className="hint-list">
+                <div className="hint-card">
+                  <strong>Contest</strong>
+                  <span>{selectedContest ? `${selectedContest.title} (${selectedContest.slug})` : "Not selected"}</span>
+                </div>
+                <div className="hint-card">
+                  <strong>Problem</strong>
+                  <span>
+                    {selectedProblemSummary
+                      ? `${selectedProblemSummary.code} — ${selectedProblemSummary.title}`
+                      : "Not selected"}
+                  </span>
+                </div>
+                <div className="hint-card">
+                  <strong>Test case</strong>
+                  <span>
+                    {selectedTestCaseSummary
+                      ? `#${selectedTestCaseSummary.position}`
+                      : "Not selected"}
+                  </span>
+                </div>
+              </div>
+            </Panel>
+          </div>
+
+          <div className="workspace-grid__side">
+            <Panel
+              title="Recommended flow"
+              subtitle="Typical organizer workflow inside the system."
+            >
+              <div className="hint-list">
+                <div className="hint-card">
+                  <strong>1. Prepare contest</strong>
+                  <span>Create or edit a contest and define its publication status.</span>
+                </div>
+                <div className="hint-card">
+                  <strong>2. Add problems</strong>
+                  <span>Fill statements, constraints, samples, and metadata.</span>
+                </div>
+                <div className="hint-card">
+                  <strong>3. Configure tests</strong>
+                  <span>Build visible and hidden cases for each problem.</span>
+                </div>
+                <div className="hint-card">
+                  <strong>4. Monitor submissions</strong>
+                  <span>Inspect verdicts, queue load, and rejudge when needed.</span>
+                </div>
+              </div>
+            </Panel>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "contests" ? (
+        <Panel
+          title="Contests"
+          subtitle="Select an existing contest or create a new one."
+          actions={
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => void loadContests()}
+            >
+              Reload contests
+            </button>
+          }
+        >
+          <div className="workspace-two-column">
+            <div className="list-stack">
+              {contests.length === 0 ? (
+                <p className="muted">No contests yet.</p>
+              ) : (
+                contests.map((contest) => (
+                  <button
+                    key={contest.id}
+                    type="button"
+                    className={`selectable-card ${
+                      contest.id === selectedContestId
+                        ? "selectable-card--active"
+                        : ""
+                    }`}
+                    onClick={() => setSelectedContestId(contest.id)}
+                  >
+                    <div className="list-card__header">
+                      <div>
+                        <strong>{contest.title}</strong>
+                        <div className="muted small-text">{contest.slug}</div>
+                      </div>
+                      <StatusPill value={contest.status} />
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="stack">
+              <Panel title="Create contest" subtitle="Add a new contest entity.">
+                <form className="form-stack" onSubmit={handleCreateContest}>
+                  <label className="field">
+                    <span>Title</span>
+                    <input
+                      value={createContestForm.title}
+                      onChange={(event) =>
+                        setCreateContestForm((current) => ({
+                          ...current,
+                          title: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Slug</span>
+                    <input
+                      value={createContestForm.slug}
+                      onChange={(event) =>
+                        setCreateContestForm((current) => ({
+                          ...current,
+                          slug: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Description</span>
+                    <textarea
+                      rows={3}
+                      value={createContestForm.description}
+                      onChange={(event) =>
+                        setCreateContestForm((current) => ({
+                          ...current,
+                          description: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <div className="two-column-grid">
+                    <label className="field">
+                      <span>Status</span>
+                      <select
+                        value={createContestForm.status}
+                        onChange={(event) =>
+                          setCreateContestForm((current) => ({
+                            ...current,
+                            status: event.target.value as ContestFormState["status"],
+                          }))
+                        }
+                      >
+                        <option value="draft">draft</option>
+                        <option value="published">published</option>
+                        <option value="archived">archived</option>
+                      </select>
+                    </label>
+
+                    <label className="field">
+                      <span>Starts at</span>
+                      <input
+                        value={createContestForm.starts_at}
+                        onChange={(event) =>
+                          setCreateContestForm((current) => ({
+                            ...current,
+                            starts_at: event.target.value,
+                          }))
+                        }
+                        placeholder="2026-03-20T10:00:00Z"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="field">
+                    <span>Ends at</span>
+                    <input
+                      value={createContestForm.ends_at}
+                      onChange={(event) =>
+                        setCreateContestForm((current) => ({
+                          ...current,
+                          ends_at: event.target.value,
+                        }))
+                      }
+                      placeholder="2026-03-20T15:00:00Z"
+                    />
+                  </label>
+
+                  <button
+                    type="submit"
+                    className="button"
+                    disabled={busyAction !== null}
+                  >
+                    {busyAction === "create-contest" ? "Creating..." : "Create contest"}
+                  </button>
+                </form>
+              </Panel>
+
+              {selectedContest ? (
+                <Panel
+                  title="Edit selected contest"
+                  subtitle={`Currently selected: ${selectedContest.title}`}
+                >
+                  <form className="form-stack" onSubmit={handleUpdateContest}>
                     <label className="field">
                       <span>Title</span>
                       <input
-                        value={createContestForm.title}
+                        value={editContestForm.title}
                         onChange={(event) =>
-                          setCreateContestForm((current) => ({
+                          setEditContestForm((current) => ({
                             ...current,
                             title: event.target.value,
                           }))
@@ -776,9 +1083,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                     <label className="field">
                       <span>Slug</span>
                       <input
-                        value={createContestForm.slug}
+                        value={editContestForm.slug}
                         onChange={(event) =>
-                          setCreateContestForm((current) => ({
+                          setEditContestForm((current) => ({
                             ...current,
                             slug: event.target.value,
                           }))
@@ -790,9 +1097,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <span>Description</span>
                       <textarea
                         rows={3}
-                        value={createContestForm.description}
+                        value={editContestForm.description}
                         onChange={(event) =>
-                          setCreateContestForm((current) => ({
+                          setEditContestForm((current) => ({
                             ...current,
                             description: event.target.value,
                           }))
@@ -804,9 +1111,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <label className="field">
                         <span>Status</span>
                         <select
-                          value={createContestForm.status}
+                          value={editContestForm.status}
                           onChange={(event) =>
-                            setCreateContestForm((current) => ({
+                            setEditContestForm((current) => ({
                               ...current,
                               status: event.target.value as ContestFormState["status"],
                             }))
@@ -821,14 +1128,13 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <label className="field">
                         <span>Starts at</span>
                         <input
-                          value={createContestForm.starts_at}
+                          value={editContestForm.starts_at}
                           onChange={(event) =>
-                            setCreateContestForm((current) => ({
+                            setEditContestForm((current) => ({
                               ...current,
                               starts_at: event.target.value,
                             }))
                           }
-                          placeholder="2026-03-20T10:00:00Z"
                         />
                       </label>
                     </div>
@@ -836,193 +1142,289 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                     <label className="field">
                       <span>Ends at</span>
                       <input
-                        value={createContestForm.ends_at}
+                        value={editContestForm.ends_at}
                         onChange={(event) =>
-                          setCreateContestForm((current) => ({
+                          setEditContestForm((current) => ({
                             ...current,
                             ends_at: event.target.value,
                           }))
                         }
-                        placeholder="2026-03-20T15:00:00Z"
                       />
                     </label>
 
-                    <button
-                      type="submit"
-                      className="button"
-                      disabled={busyAction !== null}
-                    >
-                      {busyAction === "create-contest" ? "Creating..." : "Create contest"}
-                    </button>
+                    <div className="inline-links-row">
+                      <button
+                        type="submit"
+                        className="button"
+                        disabled={busyAction !== null}
+                      >
+                        {busyAction === "update-contest" ? "Saving..." : "Save changes"}
+                      </button>
+
+                      <Link
+                        to={`/contests/${selectedContest.slug}`}
+                        className="inline-link"
+                      >
+                        Open public contest page
+                      </Link>
+                    </div>
                   </form>
                 </Panel>
+              ) : null}
+            </div>
+          </div>
+        </Panel>
+      ) : null}
 
-                {selectedContest ? (
-                  <Panel
-                    title="Edit selected contest"
-                    subtitle={`Currently selected: ${selectedContest.title}`}
-                  >
-                    <form className="form-stack" onSubmit={handleUpdateContest}>
+      {activeTab === "problems" ? (
+        <Panel
+          title="Problems"
+          subtitle="Manage problem statements for the selected contest."
+        >
+          {!selectedContest ? (
+            <p className="muted">Select a contest first from the Contests tab.</p>
+          ) : (
+            <div className="workspace-two-column">
+              <div className="list-stack">
+                {problems.length === 0 ? (
+                  <p className="muted">No problems in this contest yet.</p>
+                ) : (
+                  problems.map((problem) => (
+                    <button
+                      key={problem.id}
+                      type="button"
+                      className={`selectable-card ${
+                        problem.id === selectedProblemId
+                          ? "selectable-card--active"
+                          : ""
+                      }`}
+                      onClick={() => setSelectedProblemId(problem.id)}
+                    >
+                      <div className="list-card__header">
+                        <div>
+                          <strong>
+                            {problem.code} — {problem.title}
+                          </strong>
+                          <div className="muted small-text">
+                            Position: {problem.position}
+                          </div>
+                        </div>
+                        <StatusPill value={problem.status} />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="stack">
+                <Panel
+                  title="Create problem"
+                  subtitle={`Contest: ${selectedContest.title}`}
+                >
+                  <form className="form-stack" onSubmit={handleCreateProblem}>
+                    <div className="two-column-grid">
+                      <label className="field">
+                        <span>Code</span>
+                        <input
+                          value={createProblemForm.code}
+                          onChange={(event) =>
+                            setCreateProblemForm((current) => ({
+                              ...current,
+                              code: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+
                       <label className="field">
                         <span>Title</span>
                         <input
-                          value={editContestForm.title}
+                          value={createProblemForm.title}
                           onChange={(event) =>
-                            setEditContestForm((current) => ({
+                            setCreateProblemForm((current) => ({
                               ...current,
                               title: event.target.value,
                             }))
                           }
                         />
                       </label>
+                    </div>
 
-                      <label className="field">
-                        <span>Slug</span>
-                        <input
-                          value={editContestForm.slug}
-                          onChange={(event) =>
-                            setEditContestForm((current) => ({
-                              ...current,
-                              slug: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
+                    <label className="field">
+                      <span>Statement</span>
+                      <textarea
+                        rows={6}
+                        value={createProblemForm.statement}
+                        onChange={(event) =>
+                          setCreateProblemForm((current) => ({
+                            ...current,
+                            statement: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
 
+                    <label className="field">
+                      <span>Input specification</span>
+                      <textarea
+                        rows={3}
+                        value={createProblemForm.input_specification}
+                        onChange={(event) =>
+                          setCreateProblemForm((current) => ({
+                            ...current,
+                            input_specification: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>Output specification</span>
+                      <textarea
+                        rows={3}
+                        value={createProblemForm.output_specification}
+                        onChange={(event) =>
+                          setCreateProblemForm((current) => ({
+                            ...current,
+                            output_specification: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>Notes</span>
+                      <textarea
+                        rows={3}
+                        value={createProblemForm.notes}
+                        onChange={(event) =>
+                          setCreateProblemForm((current) => ({
+                            ...current,
+                            notes: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <div className="two-column-grid">
                       <label className="field">
-                        <span>Description</span>
+                        <span>Sample input</span>
                         <textarea
                           rows={3}
-                          value={editContestForm.description}
+                          value={createProblemForm.sample_input}
                           onChange={(event) =>
-                            setEditContestForm((current) => ({
+                            setCreateProblemForm((current) => ({
                               ...current,
-                              description: event.target.value,
+                              sample_input: event.target.value,
                             }))
                           }
                         />
                       </label>
-
-                      <div className="two-column-grid">
-                        <label className="field">
-                          <span>Status</span>
-                          <select
-                            value={editContestForm.status}
-                            onChange={(event) =>
-                              setEditContestForm((current) => ({
-                                ...current,
-                                status: event.target.value as ContestFormState["status"],
-                              }))
-                            }
-                          >
-                            <option value="draft">draft</option>
-                            <option value="published">published</option>
-                            <option value="archived">archived</option>
-                          </select>
-                        </label>
-
-                        <label className="field">
-                          <span>Starts at</span>
-                          <input
-                            value={editContestForm.starts_at}
-                            onChange={(event) =>
-                              setEditContestForm((current) => ({
-                                ...current,
-                                starts_at: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
 
                       <label className="field">
-                        <span>Ends at</span>
-                        <input
-                          value={editContestForm.ends_at}
+                        <span>Sample output</span>
+                        <textarea
+                          rows={3}
+                          value={createProblemForm.sample_output}
                           onChange={(event) =>
-                            setEditContestForm((current) => ({
+                            setCreateProblemForm((current) => ({
                               ...current,
-                              ends_at: event.target.value,
+                              sample_output: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <div className="two-column-grid">
+                      <label className="field">
+                        <span>Time limit (ms)</span>
+                        <input
+                          type="number"
+                          min={100}
+                          value={createProblemForm.time_limit_ms}
+                          onChange={(event) =>
+                            setCreateProblemForm((current) => ({
+                              ...current,
+                              time_limit_ms: event.target.value,
                             }))
                           }
                         />
                       </label>
 
-                      <div className="inline-links-row">
-                        <button
-                          type="submit"
-                          className="button"
-                          disabled={busyAction !== null}
+                      <label className="field">
+                        <span>Memory limit (MB)</span>
+                        <input
+                          type="number"
+                          min={16}
+                          value={createProblemForm.memory_limit_mb}
+                          onChange={(event) =>
+                            setCreateProblemForm((current) => ({
+                              ...current,
+                              memory_limit_mb: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <div className="two-column-grid">
+                      <label className="field">
+                        <span>Position</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={createProblemForm.position}
+                          onChange={(event) =>
+                            setCreateProblemForm((current) => ({
+                              ...current,
+                              position: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+
+                      <label className="field">
+                        <span>Status</span>
+                        <select
+                          value={createProblemForm.status}
+                          onChange={(event) =>
+                            setCreateProblemForm((current) => ({
+                              ...current,
+                              status: event.target.value as ProblemFormState["status"],
+                            }))
+                          }
                         >
-                          {busyAction === "update-contest" ? "Saving..." : "Save changes"}
-                        </button>
+                          <option value="draft">draft</option>
+                          <option value="published">published</option>
+                          <option value="archived">archived</option>
+                        </select>
+                      </label>
+                    </div>
 
-                        <Link
-                          to={`/contests/${selectedContest.slug}`}
-                          className="inline-link"
-                        >
-                          Open public contest page
-                        </Link>
-                      </div>
-                    </form>
-                  </Panel>
-                ) : null}
-              </div>
-            </div>
-          </Panel>
+                    <button
+                      type="submit"
+                      className="button"
+                      disabled={busyAction !== null}
+                    >
+                      {busyAction === "create-problem" ? "Creating..." : "Create problem"}
+                    </button>
+                  </form>
+                </Panel>
 
-          <Panel
-            title="Problems"
-            subtitle="Manage problem statements for the selected contest."
-          >
-            {!selectedContest ? (
-              <p className="muted">Select a contest first.</p>
-            ) : (
-              <div className="workspace-two-column">
-                <div className="list-stack">
-                  {problems.length === 0 ? (
-                    <p className="muted">No problems in this contest yet.</p>
-                  ) : (
-                    problems.map((problem) => (
-                      <button
-                        key={problem.id}
-                        type="button"
-                        className={`selectable-card ${
-                          problem.id === selectedProblemId
-                            ? "selectable-card--active"
-                            : ""
-                        }`}
-                        onClick={() => setSelectedProblemId(problem.id)}
-                      >
-                        <div className="list-card__header">
-                          <div>
-                            <strong>
-                              {problem.code} — {problem.title}
-                            </strong>
-                            <div className="muted small-text">
-                              Position: {problem.position}
-                            </div>
-                          </div>
-                          <StatusPill value={problem.status} />
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-
-                <div className="stack">
+                {selectedProblem ? (
                   <Panel
-                    title="Create problem"
-                    subtitle={`Contest: ${selectedContest.title}`}
+                    title="Edit selected problem"
+                    subtitle={`Selected: ${selectedProblem.code} — ${selectedProblem.title}`}
                   >
-                    <form className="form-stack" onSubmit={handleCreateProblem}>
+                    <form className="form-stack" onSubmit={handleUpdateProblem}>
                       <div className="two-column-grid">
                         <label className="field">
                           <span>Code</span>
                           <input
-                            value={createProblemForm.code}
+                            value={editProblemForm.code}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 code: event.target.value,
                               }))
@@ -1033,9 +1435,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <label className="field">
                           <span>Title</span>
                           <input
-                            value={createProblemForm.title}
+                            value={editProblemForm.title}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 title: event.target.value,
                               }))
@@ -1048,9 +1450,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <span>Statement</span>
                         <textarea
                           rows={6}
-                          value={createProblemForm.statement}
+                          value={editProblemForm.statement}
                           onChange={(event) =>
-                            setCreateProblemForm((current) => ({
+                            setEditProblemForm((current) => ({
                               ...current,
                               statement: event.target.value,
                             }))
@@ -1062,9 +1464,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <span>Input specification</span>
                         <textarea
                           rows={3}
-                          value={createProblemForm.input_specification}
+                          value={editProblemForm.input_specification}
                           onChange={(event) =>
-                            setCreateProblemForm((current) => ({
+                            setEditProblemForm((current) => ({
                               ...current,
                               input_specification: event.target.value,
                             }))
@@ -1076,9 +1478,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <span>Output specification</span>
                         <textarea
                           rows={3}
-                          value={createProblemForm.output_specification}
+                          value={editProblemForm.output_specification}
                           onChange={(event) =>
-                            setCreateProblemForm((current) => ({
+                            setEditProblemForm((current) => ({
                               ...current,
                               output_specification: event.target.value,
                             }))
@@ -1090,9 +1492,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <span>Notes</span>
                         <textarea
                           rows={3}
-                          value={createProblemForm.notes}
+                          value={editProblemForm.notes}
                           onChange={(event) =>
-                            setCreateProblemForm((current) => ({
+                            setEditProblemForm((current) => ({
                               ...current,
                               notes: event.target.value,
                             }))
@@ -1105,9 +1507,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           <span>Sample input</span>
                           <textarea
                             rows={3}
-                            value={createProblemForm.sample_input}
+                            value={editProblemForm.sample_input}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 sample_input: event.target.value,
                               }))
@@ -1119,9 +1521,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           <span>Sample output</span>
                           <textarea
                             rows={3}
-                            value={createProblemForm.sample_output}
+                            value={editProblemForm.sample_output}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 sample_output: event.target.value,
                               }))
@@ -1136,9 +1538,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           <input
                             type="number"
                             min={100}
-                            value={createProblemForm.time_limit_ms}
+                            value={editProblemForm.time_limit_ms}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 time_limit_ms: event.target.value,
                               }))
@@ -1151,9 +1553,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           <input
                             type="number"
                             min={16}
-                            value={createProblemForm.memory_limit_mb}
+                            value={editProblemForm.memory_limit_mb}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 memory_limit_mb: event.target.value,
                               }))
@@ -1168,9 +1570,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           <input
                             type="number"
                             min={1}
-                            value={createProblemForm.position}
+                            value={editProblemForm.position}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 position: event.target.value,
                               }))
@@ -1181,9 +1583,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <label className="field">
                           <span>Status</span>
                           <select
-                            value={createProblemForm.status}
+                            value={editProblemForm.status}
                             onChange={(event) =>
-                              setCreateProblemForm((current) => ({
+                              setEditProblemForm((current) => ({
                                 ...current,
                                 status: event.target.value as ProblemFormState["status"],
                               }))
@@ -1196,277 +1598,170 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         </label>
                       </div>
 
-                      <button
-                        type="submit"
-                        className="button"
-                        disabled={busyAction !== null}
-                      >
-                        {busyAction === "create-problem" ? "Creating..." : "Create problem"}
-                      </button>
+                      <div className="inline-links-row">
+                        <button
+                          type="submit"
+                          className="button"
+                          disabled={busyAction !== null}
+                        >
+                          {busyAction === "update-problem" ? "Saving..." : "Save changes"}
+                        </button>
+
+                        <Link
+                          to={`/contests/${selectedContest?.slug}/problems/${selectedProblem.code}`}
+                          className="inline-link"
+                        >
+                          Open public problem page
+                        </Link>
+                      </div>
                     </form>
                   </Panel>
-
-                  {selectedProblem ? (
-                    <Panel
-                      title="Edit selected problem"
-                      subtitle={`Selected: ${selectedProblem.code} — ${selectedProblem.title}`}
-                    >
-                      <form className="form-stack" onSubmit={handleUpdateProblem}>
-                        <div className="two-column-grid">
-                          <label className="field">
-                            <span>Code</span>
-                            <input
-                              value={editProblemForm.code}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  code: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-
-                          <label className="field">
-                            <span>Title</span>
-                            <input
-                              value={editProblemForm.title}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  title: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                        </div>
-
-                        <label className="field">
-                          <span>Statement</span>
-                          <textarea
-                            rows={6}
-                            value={editProblemForm.statement}
-                            onChange={(event) =>
-                              setEditProblemForm((current) => ({
-                                ...current,
-                                statement: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="field">
-                          <span>Input specification</span>
-                          <textarea
-                            rows={3}
-                            value={editProblemForm.input_specification}
-                            onChange={(event) =>
-                              setEditProblemForm((current) => ({
-                                ...current,
-                                input_specification: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="field">
-                          <span>Output specification</span>
-                          <textarea
-                            rows={3}
-                            value={editProblemForm.output_specification}
-                            onChange={(event) =>
-                              setEditProblemForm((current) => ({
-                                ...current,
-                                output_specification: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="field">
-                          <span>Notes</span>
-                          <textarea
-                            rows={3}
-                            value={editProblemForm.notes}
-                            onChange={(event) =>
-                              setEditProblemForm((current) => ({
-                                ...current,
-                                notes: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <div className="two-column-grid">
-                          <label className="field">
-                            <span>Sample input</span>
-                            <textarea
-                              rows={3}
-                              value={editProblemForm.sample_input}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  sample_input: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-
-                          <label className="field">
-                            <span>Sample output</span>
-                            <textarea
-                              rows={3}
-                              value={editProblemForm.sample_output}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  sample_output: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                        </div>
-
-                        <div className="two-column-grid">
-                          <label className="field">
-                            <span>Time limit (ms)</span>
-                            <input
-                              type="number"
-                              min={100}
-                              value={editProblemForm.time_limit_ms}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  time_limit_ms: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-
-                          <label className="field">
-                            <span>Memory limit (MB)</span>
-                            <input
-                              type="number"
-                              min={16}
-                              value={editProblemForm.memory_limit_mb}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  memory_limit_mb: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                        </div>
-
-                        <div className="two-column-grid">
-                          <label className="field">
-                            <span>Position</span>
-                            <input
-                              type="number"
-                              min={1}
-                              value={editProblemForm.position}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  position: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-
-                          <label className="field">
-                            <span>Status</span>
-                            <select
-                              value={editProblemForm.status}
-                              onChange={(event) =>
-                                setEditProblemForm((current) => ({
-                                  ...current,
-                                  status: event.target.value as ProblemFormState["status"],
-                                }))
-                              }
-                            >
-                              <option value="draft">draft</option>
-                              <option value="published">published</option>
-                              <option value="archived">archived</option>
-                            </select>
-                          </label>
-                        </div>
-
-                        <div className="inline-links-row">
-                          <button
-                            type="submit"
-                            className="button"
-                            disabled={busyAction !== null}
-                          >
-                            {busyAction === "update-problem" ? "Saving..." : "Save changes"}
-                          </button>
-
-                          <Link
-                            to={`/contests/${selectedContest?.slug}/problems/${selectedProblem.code}`}
-                            className="inline-link"
-                          >
-                            Open public problem page
-                          </Link>
-                        </div>
-                      </form>
-                    </Panel>
-                  ) : null}
-                </div>
+                ) : null}
               </div>
-            )}
-          </Panel>
+            </div>
+          )}
+        </Panel>
+      ) : null}
 
-          <Panel
-            title="Test cases"
-            subtitle="Maintain the selected problem test suite."
-          >
-            {!selectedProblem ? (
-              <p className="muted">Select a problem first.</p>
-            ) : (
-              <div className="workspace-two-column">
-                <div className="list-stack">
-                  {testCases.length === 0 ? (
-                    <p className="muted">No test cases for this problem yet.</p>
-                  ) : (
-                    testCases.map((testCase) => (
-                      <button
-                        key={testCase.id}
-                        type="button"
-                        className={`selectable-card ${
-                          testCase.id === selectedTestCaseId
-                            ? "selectable-card--active"
-                            : ""
-                        }`}
-                        onClick={() => setSelectedTestCaseId(testCase.id)}
-                      >
-                        <div className="list-card__header">
-                          <div>
-                            <strong>Test #{testCase.position}</strong>
-                            <div className="muted small-text">
-                              {testCase.is_sample ? "sample" : "hidden"} ·{" "}
-                              {testCase.is_active ? "active" : "inactive"}
-                            </div>
+      {activeTab === "test-cases" ? (
+        <Panel
+          title="Test cases"
+          subtitle="Maintain the selected problem test suite."
+        >
+          {!selectedProblem ? (
+            <p className="muted">Select a problem first from the Problems tab.</p>
+          ) : (
+            <div className="workspace-two-column">
+              <div className="list-stack">
+                {testCases.length === 0 ? (
+                  <p className="muted">No test cases for this problem yet.</p>
+                ) : (
+                  testCases.map((testCase) => (
+                    <button
+                      key={testCase.id}
+                      type="button"
+                      className={`selectable-card ${
+                        testCase.id === selectedTestCaseId
+                          ? "selectable-card--active"
+                          : ""
+                      }`}
+                      onClick={() => setSelectedTestCaseId(testCase.id)}
+                    >
+                      <div className="list-card__header">
+                        <div>
+                          <strong>Test #{testCase.position}</strong>
+                          <div className="muted small-text">
+                            {testCase.is_sample ? "sample" : "hidden"} ·{" "}
+                            {testCase.is_active ? "active" : "inactive"}
                           </div>
-                          <StatusPill value={testCase.is_active ? "active" : "inactive"} />
                         </div>
-                      </button>
-                    ))
-                  )}
-                </div>
+                        <StatusPill value={testCase.is_active ? "active" : "inactive"} />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
 
-                <div className="stack">
+              <div className="stack">
+                <Panel
+                  title="Create test case"
+                  subtitle={`Problem: ${selectedProblem.code} — ${selectedProblem.title}`}
+                >
+                  <form className="form-stack" onSubmit={handleCreateTestCase}>
+                    <label className="field">
+                      <span>Input data</span>
+                      <textarea
+                        rows={5}
+                        value={createTestCaseForm.input_data}
+                        onChange={(event) =>
+                          setCreateTestCaseForm((current) => ({
+                            ...current,
+                            input_data: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>Expected output</span>
+                      <textarea
+                        rows={5}
+                        value={createTestCaseForm.expected_output}
+                        onChange={(event) =>
+                          setCreateTestCaseForm((current) => ({
+                            ...current,
+                            expected_output: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>Position</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={createTestCaseForm.position}
+                        onChange={(event) =>
+                          setCreateTestCaseForm((current) => ({
+                            ...current,
+                            position: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={createTestCaseForm.is_sample}
+                        onChange={(event) =>
+                          setCreateTestCaseForm((current) => ({
+                            ...current,
+                            is_sample: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Sample test</span>
+                    </label>
+
+                    <label className="checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={createTestCaseForm.is_active}
+                        onChange={(event) =>
+                          setCreateTestCaseForm((current) => ({
+                            ...current,
+                            is_active: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Active</span>
+                    </label>
+
+                    <button
+                      type="submit"
+                      className="button"
+                      disabled={busyAction !== null}
+                    >
+                      {busyAction === "create-test-case" ? "Creating..." : "Create test case"}
+                    </button>
+                  </form>
+                </Panel>
+
+                {selectedTestCase ? (
                   <Panel
-                    title="Create test case"
-                    subtitle={`Problem: ${selectedProblem.code} — ${selectedProblem.title}`}
+                    title="Edit selected test case"
+                    subtitle={`Currently selected: #${selectedTestCase.position}`}
                   >
-                    <form className="form-stack" onSubmit={handleCreateTestCase}>
+                    <form className="form-stack" onSubmit={handleUpdateTestCase}>
                       <label className="field">
                         <span>Input data</span>
                         <textarea
                           rows={5}
-                          value={createTestCaseForm.input_data}
+                          value={editTestCaseForm.input_data}
                           onChange={(event) =>
-                            setCreateTestCaseForm((current) => ({
+                            setEditTestCaseForm((current) => ({
                               ...current,
                               input_data: event.target.value,
                             }))
@@ -1478,9 +1773,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <span>Expected output</span>
                         <textarea
                           rows={5}
-                          value={createTestCaseForm.expected_output}
+                          value={editTestCaseForm.expected_output}
                           onChange={(event) =>
-                            setCreateTestCaseForm((current) => ({
+                            setEditTestCaseForm((current) => ({
                               ...current,
                               expected_output: event.target.value,
                             }))
@@ -1493,9 +1788,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <input
                           type="number"
                           min={1}
-                          value={createTestCaseForm.position}
+                          value={editTestCaseForm.position}
                           onChange={(event) =>
-                            setCreateTestCaseForm((current) => ({
+                            setEditTestCaseForm((current) => ({
                               ...current,
                               position: event.target.value,
                             }))
@@ -1506,9 +1801,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <label className="checkbox-field">
                         <input
                           type="checkbox"
-                          checked={createTestCaseForm.is_sample}
+                          checked={editTestCaseForm.is_sample}
                           onChange={(event) =>
-                            setCreateTestCaseForm((current) => ({
+                            setEditTestCaseForm((current) => ({
                               ...current,
                               is_sample: event.target.checked,
                             }))
@@ -1520,9 +1815,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <label className="checkbox-field">
                         <input
                           type="checkbox"
-                          checked={createTestCaseForm.is_active}
+                          checked={editTestCaseForm.is_active}
                           onChange={(event) =>
-                            setCreateTestCaseForm((current) => ({
+                            setEditTestCaseForm((current) => ({
                               ...current,
                               is_active: event.target.checked,
                             }))
@@ -1536,288 +1831,212 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         className="button"
                         disabled={busyAction !== null}
                       >
-                        {busyAction === "create-test-case" ? "Creating..." : "Create test case"}
+                        {busyAction === "update-test-case" ? "Saving..." : "Save changes"}
                       </button>
                     </form>
                   </Panel>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </Panel>
+      ) : null}
 
-                  {selectedTestCase ? (
-                    <Panel
-                      title="Edit selected test case"
-                      subtitle={`Currently selected: #${selectedTestCase.position}`}
+      {activeTab === "submissions" ? (
+        <div className="workspace-grid">
+          <div className="workspace-grid__main">
+            <Panel
+              title="Submission filters"
+              subtitle="Narrow down the submission list by contest, problem, user, or verdict."
+            >
+              <form className="form-stack" onSubmit={handleApplySubmissionFilters}>
+                <div className="two-column-grid">
+                  <label className="field">
+                    <span>Contest slug</span>
+                    <input
+                      value={submissionFilters.contest_slug}
+                      onChange={(event) =>
+                        setSubmissionFilters((current) => ({
+                          ...current,
+                          contest_slug: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Problem code</span>
+                    <input
+                      value={submissionFilters.problem_code}
+                      onChange={(event) =>
+                        setSubmissionFilters((current) => ({
+                          ...current,
+                          problem_code: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div className="two-column-grid">
+                  <label className="field">
+                    <span>Username</span>
+                    <input
+                      value={submissionFilters.username}
+                      onChange={(event) =>
+                        setSubmissionFilters((current) => ({
+                          ...current,
+                          username: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Language</span>
+                    <select
+                      value={submissionFilters.language}
+                      onChange={(event) =>
+                        setSubmissionFilters((current) => ({
+                          ...current,
+                          language: event.target.value,
+                        }))
+                      }
                     >
-                      <form className="form-stack" onSubmit={handleUpdateTestCase}>
-                        <label className="field">
-                          <span>Input data</span>
-                          <textarea
-                            rows={5}
-                            value={editTestCaseForm.input_data}
-                            onChange={(event) =>
-                              setEditTestCaseForm((current) => ({
-                                ...current,
-                                input_data: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
+                      <option value="">any</option>
+                      <option value="python">python</option>
+                      <option value="cpp">cpp</option>
+                    </select>
+                  </label>
+                </div>
 
-                        <label className="field">
-                          <span>Expected output</span>
-                          <textarea
-                            rows={5}
-                            value={editTestCaseForm.expected_output}
-                            onChange={(event) =>
-                              setEditTestCaseForm((current) => ({
-                                ...current,
-                                expected_output: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
+                <div className="two-column-grid">
+                  <label className="field">
+                    <span>Status</span>
+                    <select
+                      value={submissionFilters.status}
+                      onChange={(event) =>
+                        setSubmissionFilters((current) => ({
+                          ...current,
+                          status: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">any</option>
+                      <option value="pending">pending</option>
+                      <option value="running">running</option>
+                      <option value="finished">finished</option>
+                    </select>
+                  </label>
 
-                        <label className="field">
-                          <span>Position</span>
-                          <input
-                            type="number"
-                            min={1}
-                            value={editTestCaseForm.position}
-                            onChange={(event) =>
-                              setEditTestCaseForm((current) => ({
-                                ...current,
-                                position: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
+                  <label className="field">
+                    <span>Verdict</span>
+                    <select
+                      value={submissionFilters.verdict}
+                      onChange={(event) =>
+                        setSubmissionFilters((current) => ({
+                          ...current,
+                          verdict: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">any</option>
+                      <option value="pending">pending</option>
+                      <option value="accepted">accepted</option>
+                      <option value="wrong_answer">wrong_answer</option>
+                      <option value="runtime_error">runtime_error</option>
+                      <option value="time_limit_exceeded">time_limit_exceeded</option>
+                      <option value="compilation_error">compilation_error</option>
+                      <option value="internal_error">internal_error</option>
+                      <option value="no_tests">no_tests</option>
+                    </select>
+                  </label>
+                </div>
 
-                        <label className="checkbox-field">
-                          <input
-                            type="checkbox"
-                            checked={editTestCaseForm.is_sample}
-                            onChange={(event) =>
-                              setEditTestCaseForm((current) => ({
-                                ...current,
-                                is_sample: event.target.checked,
-                              }))
-                            }
-                          />
-                          <span>Sample test</span>
-                        </label>
+                <div className="inline-links-row">
+                  <button type="submit" className="button" disabled={submissionsLoading}>
+                    {submissionsLoading ? "Loading..." : "Apply filters"}
+                  </button>
 
-                        <label className="checkbox-field">
-                          <input
-                            type="checkbox"
-                            checked={editTestCaseForm.is_active}
-                            onChange={(event) =>
-                              setEditTestCaseForm((current) => ({
-                                ...current,
-                                is_active: event.target.checked,
-                              }))
-                            }
-                          />
-                          <span>Active</span>
-                        </label>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => void handleClearSubmissionFilters()}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </form>
+            </Panel>
+          </div>
+
+          <div className="workspace-grid__side">
+            <Panel
+              title="Filtered submissions"
+              subtitle="Inspect verdicts and trigger rejudge when needed."
+            >
+              {submissionsLoading ? <p className="muted">Loading submissions...</p> : null}
+
+              {!submissionsLoading && submissions.length === 0 ? (
+                <p className="muted">No submissions matched the current filters.</p>
+              ) : null}
+
+              {submissions.length > 0 ? (
+                <div className="list-stack">
+                  {submissions.map((submission) => (
+                    <article key={submission.id} className="list-card">
+                      <div className="list-card__header">
+                        <div>
+                          <strong>
+                            {submission.user.username} · {submission.problem.code}
+                          </strong>
+                          <div className="muted small-text">
+                            {submission.contest.slug} ·{" "}
+                            {new Date(submission.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        <StatusPill value={submission.verdict} />
+                      </div>
+
+                      <div className="meta-grid">
+                        <span>Status: {submission.status}</span>
+                        <span>Language: {submission.language}</span>
+                        <span>
+                          Passed: {submission.passed_test_count}/{submission.total_test_count}
+                        </span>
+                        <span>Time: {submission.execution_time_ms ?? "—"} ms</span>
+                      </div>
+
+                      <div className="inline-links-row">
+                        <Link
+                          to={`/submissions/${submission.id}`}
+                          className="inline-link"
+                        >
+                          Open submission
+                        </Link>
 
                         <button
-                          type="submit"
-                          className="button"
-                          disabled={busyAction !== null}
+                          type="button"
+                          className="button button--secondary"
+                          disabled={
+                            submission.status === "running" ||
+                            busyAction === `rejudge-${submission.id}`
+                          }
+                          onClick={() => void handleRejudge(submission.id)}
                         >
-                          {busyAction === "update-test-case" ? "Saving..." : "Save changes"}
+                          {busyAction === `rejudge-${submission.id}`
+                            ? "Queueing..."
+                            : "Rejudge"}
                         </button>
-                      </form>
-                    </Panel>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </Panel>
-        </div>
-
-        <div className="workspace-grid__side">
-          <Panel
-            title="Submission center"
-            subtitle="Filter and operate all submissions visible to organizers."
-          >
-            <form className="form-stack" onSubmit={handleApplySubmissionFilters}>
-              <label className="field">
-                <span>Contest slug</span>
-                <input
-                  value={submissionFilters.contest_slug}
-                  onChange={(event) =>
-                    setSubmissionFilters((current) => ({
-                      ...current,
-                      contest_slug: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="field">
-                <span>Problem code</span>
-                <input
-                  value={submissionFilters.problem_code}
-                  onChange={(event) =>
-                    setSubmissionFilters((current) => ({
-                      ...current,
-                      problem_code: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="field">
-                <span>Username</span>
-                <input
-                  value={submissionFilters.username}
-                  onChange={(event) =>
-                    setSubmissionFilters((current) => ({
-                      ...current,
-                      username: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="field">
-                <span>Language</span>
-                <select
-                  value={submissionFilters.language}
-                  onChange={(event) =>
-                    setSubmissionFilters((current) => ({
-                      ...current,
-                      language: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">any</option>
-                  <option value="python">python</option>
-                  <option value="cpp">cpp</option>
-                </select>
-              </label>
-
-              <label className="field">
-                <span>Status</span>
-                <select
-                  value={submissionFilters.status}
-                  onChange={(event) =>
-                    setSubmissionFilters((current) => ({
-                      ...current,
-                      status: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">any</option>
-                  <option value="pending">pending</option>
-                  <option value="running">running</option>
-                  <option value="finished">finished</option>
-                </select>
-              </label>
-
-              <label className="field">
-                <span>Verdict</span>
-                <select
-                  value={submissionFilters.verdict}
-                  onChange={(event) =>
-                    setSubmissionFilters((current) => ({
-                      ...current,
-                      verdict: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">any</option>
-                  <option value="pending">pending</option>
-                  <option value="accepted">accepted</option>
-                  <option value="wrong_answer">wrong_answer</option>
-                  <option value="runtime_error">runtime_error</option>
-                  <option value="time_limit_exceeded">time_limit_exceeded</option>
-                  <option value="compilation_error">compilation_error</option>
-                  <option value="internal_error">internal_error</option>
-                  <option value="no_tests">no_tests</option>
-                </select>
-              </label>
-
-              <div className="inline-links-row">
-                <button type="submit" className="button" disabled={submissionsLoading}>
-                  {submissionsLoading ? "Loading..." : "Apply filters"}
-                </button>
-
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  onClick={() => void handleClearSubmissionFilters()}
-                >
-                  Clear
-                </button>
-              </div>
-            </form>
-          </Panel>
-
-          <Panel
-            title="Filtered submissions"
-            subtitle="Inspect verdicts and trigger rejudge when needed."
-          >
-            {submissionsLoading ? <p className="muted">Loading submissions...</p> : null}
-
-            {!submissionsLoading && submissions.length === 0 ? (
-              <p className="muted">No submissions matched the current filters.</p>
-            ) : null}
-
-            {submissions.length > 0 ? (
-              <div className="list-stack">
-                {submissions.map((submission) => (
-                  <article key={submission.id} className="list-card">
-                    <div className="list-card__header">
-                      <div>
-                        <strong>
-                          {submission.user.username} · {submission.problem.code}
-                        </strong>
-                        <div className="muted small-text">
-                          {submission.contest.slug} ·{" "}
-                          {new Date(submission.created_at).toLocaleString()}
-                        </div>
                       </div>
-                      <StatusPill value={submission.verdict} />
-                    </div>
-
-                    <div className="meta-grid">
-                      <span>Status: {submission.status}</span>
-                      <span>Language: {submission.language}</span>
-                      <span>
-                        Passed: {submission.passed_test_count}/{submission.total_test_count}
-                      </span>
-                      <span>Time: {submission.execution_time_ms ?? "—"} ms</span>
-                    </div>
-
-                    <div className="inline-links-row">
-                      <Link
-                        to={`/submissions/${submission.id}`}
-                        className="inline-link"
-                      >
-                        Open submission
-                      </Link>
-
-                      <button
-                        type="button"
-                        className="button button--secondary"
-                        disabled={
-                          submission.status === "running" ||
-                          busyAction === `rejudge-${submission.id}`
-                        }
-                        onClick={() => void handleRejudge(submission.id)}
-                      >
-                        {busyAction === `rejudge-${submission.id}`
-                          ? "Queueing..."
-                          : "Rejudge"}
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : null}
-          </Panel>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </Panel>
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
