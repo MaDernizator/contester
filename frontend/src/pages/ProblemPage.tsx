@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { createSubmission, getProblem, isApiError } from "../api/client";
-import type { Problem, Submission, SubmissionLanguage, User } from "../api/types";
+import {
+  createSubmission,
+  getMySubmissions,
+  getProblem,
+  isApiError,
+} from "../api/client";
+import type {
+  Problem,
+  SubmissionLanguage,
+  SubmissionSummary,
+  User,
+} from "../api/types";
 import { EmptyState } from "../components/EmptyState";
 import { FormErrorList } from "../components/FormErrorList";
 import { LoadingState } from "../components/LoadingState";
+import { Pagination } from "../components/Pagination";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
 import {
@@ -18,6 +29,7 @@ interface ProblemPageProps {
 }
 
 const LANGUAGE_OPTIONS: SubmissionLanguage[] = ["python", "cpp"];
+const SUBMISSIONS_PAGE_SIZE = 8;
 
 function getDraftStorageKey(
   contestSlug: string,
@@ -25,6 +37,29 @@ function getDraftStorageKey(
   language: SubmissionLanguage,
 ): string {
   return `contester:draft:${contestSlug}:${problemCode}:${language}`;
+}
+
+function getLanguageStorageKey(contestSlug: string, problemCode: string): string {
+  return `contester:language:${contestSlug}:${problemCode}`;
+}
+
+function guessLanguageFromFileName(name: string): SubmissionLanguage | null {
+  const lower = name.toLowerCase();
+
+  if (lower.endsWith(".py")) {
+    return "python";
+  }
+
+  if (
+    lower.endsWith(".cpp") ||
+    lower.endsWith(".cc") ||
+    lower.endsWith(".cxx") ||
+    lower.endsWith(".c++")
+  ) {
+    return "cpp";
+  }
+
+  return null;
 }
 
 export function ProblemPage({ user }: ProblemPageProps) {
@@ -43,7 +78,10 @@ export function ProblemPage({ user }: ProblemPageProps) {
 
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
-  const [latestSubmission, setLatestSubmission] = useState<Submission | null>(null);
+
+  const [problemSubmissions, setProblemSubmissions] = useState<SubmissionSummary[]>([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  const [submissionsPage, setSubmissionsPage] = useState(1);
 
   const draftStorageKey = useMemo(() => {
     if (!contestSlug || !problemCode) {
@@ -52,6 +90,49 @@ export function ProblemPage({ user }: ProblemPageProps) {
 
     return getDraftStorageKey(contestSlug, problemCode, language);
   }, [contestSlug, problemCode, language]);
+
+  const languageStorageKey = useMemo(() => {
+    if (!contestSlug || !problemCode) {
+      return null;
+    }
+
+    return getLanguageStorageKey(contestSlug, problemCode);
+  }, [contestSlug, problemCode]);
+
+  const visibleSubmissions = useMemo(() => {
+    const start = (submissionsPage - 1) * SUBMISSIONS_PAGE_SIZE;
+    return problemSubmissions.slice(start, start + SUBMISSIONS_PAGE_SIZE);
+  }, [problemSubmissions, submissionsPage]);
+
+  const totalSubmissionPages = Math.max(
+    1,
+    Math.ceil(problemSubmissions.length / SUBMISSIONS_PAGE_SIZE),
+  );
+
+  useEffect(() => {
+    if (submissionsPage > totalSubmissionPages) {
+      setSubmissionsPage(totalSubmissionPages);
+    }
+  }, [submissionsPage, totalSubmissionPages]);
+
+  useEffect(() => {
+    if (!languageStorageKey) {
+      return;
+    }
+
+    const savedLanguage = window.localStorage.getItem(languageStorageKey);
+    if (savedLanguage === "python" || savedLanguage === "cpp") {
+      setLanguage(savedLanguage);
+    }
+  }, [languageStorageKey]);
+
+  useEffect(() => {
+    if (!languageStorageKey) {
+      return;
+    }
+
+    window.localStorage.setItem(languageStorageKey, language);
+  }, [language, languageStorageKey]);
 
   useEffect(() => {
     if (!user || !contestSlug || !problemCode) {
@@ -90,6 +171,47 @@ export function ProblemPage({ user }: ProblemPageProps) {
     window.localStorage.setItem(draftStorageKey, sourceCode);
   }, [draftStorageKey, sourceCode]);
 
+  async function loadProblemSubmissions() {
+    if (!contestSlug || !problemCode) {
+      return;
+    }
+
+    setSubmissionsLoading(true);
+
+    try {
+      const all = await getMySubmissions();
+      const filtered = all
+        .filter(
+          (submission) =>
+            submission.contest.slug === contestSlug &&
+            submission.problem.code === problemCode,
+        )
+        .sort(
+          (left, right) =>
+            new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+        );
+
+      setProblemSubmissions(filtered);
+      setSubmissionsPage(1);
+    } catch (error) {
+      setSubmissionError(
+        isApiError(error)
+          ? error.message
+          : "Failed to load submissions for this problem.",
+      );
+    } finally {
+      setSubmissionsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!user || !contestSlug || !problemCode) {
+      return;
+    }
+
+    void loadProblemSubmissions();
+  }, [user, contestSlug, problemCode]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -101,6 +223,7 @@ export function ProblemPage({ user }: ProblemPageProps) {
       language,
       sourceCode,
     });
+
     setValidationErrors(errors);
     setSubmissionError(null);
 
@@ -111,13 +234,14 @@ export function ProblemPage({ user }: ProblemPageProps) {
     setSubmitting(true);
 
     try {
-      const submission = await createSubmission({
+      await createSubmission({
         contestSlug,
         problemCode,
         language,
         source_code: sourceCode,
       });
-      setLatestSubmission(submission);
+
+      await loadProblemSubmissions();
     } catch (error) {
       setSubmissionError(isApiError(error) ? error.message : "Failed to submit solution.");
     } finally {
@@ -136,6 +260,28 @@ export function ProblemPage({ user }: ProblemPageProps) {
     }
     setSourceCode(getSolutionTemplate(language));
     setValidationErrors([]);
+  }
+
+  async function handleSourceFileSelected(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const guessedLanguage = guessLanguageFromFileName(file.name);
+    const text = await file.text();
+
+    if (guessedLanguage) {
+      setLanguage(guessedLanguage);
+    }
+
+    setSourceCode(text);
+    setValidationErrors([]);
+    setSubmissionError(null);
+
+    event.target.value = "";
   }
 
   if (!user) {
@@ -180,14 +326,10 @@ export function ProblemPage({ user }: ProblemPageProps) {
     <div className="stack">
       <section className="page-head">
         <div>
-          <span className="page-head__eyebrow">Problem solving</span>
+          <span className="page-head__eyebrow">Problem</span>
           <h1 className="page-head__title">
             {problem.code} — {problem.title}
           </h1>
-          <p className="page-head__subtitle">
-            Solve the task, keep a local draft in the browser, and submit to the
-            asynchronous judge.
-          </p>
         </div>
 
         <div className="page-actions">
@@ -208,12 +350,12 @@ export function ProblemPage({ user }: ProblemPageProps) {
 
       <div className="problem-layout">
         <div className="problem-layout__main">
-          <Panel title="Statement" subtitle={`Contest: ${problem.contest.title}`}>
+          <Panel title="Statement">
             <div className="meta-grid">
               <span>Time limit: {problem.time_limit_ms} ms</span>
               <span>Memory limit: {problem.memory_limit_mb} MB</span>
               <span>Status: {problem.status}</span>
-              <span>Language support: Python / C++</span>
+              <span>Contest: {problem.contest.title}</span>
             </div>
 
             <div className="problem-block">
@@ -261,12 +403,9 @@ export function ProblemPage({ user }: ProblemPageProps) {
             ) : null}
           </Panel>
 
-          <Panel
-            title="Submit solution"
-            subtitle="Drafts are stored locally in your browser for each language."
-          >
+          <Panel title="Submit solution">
             <form className="form-stack" onSubmit={handleSubmit}>
-              <div className="editor-toolbar">
+              <div className="editor-toolbar editor-toolbar--row">
                 <label className="field">
                   <span>Language</span>
                   <select
@@ -291,8 +430,9 @@ export function ProblemPage({ user }: ProblemPageProps) {
                     className="button button--secondary"
                     onClick={handleApplyTemplate}
                   >
-                    Apply template
+                    Template
                   </button>
+
                   <button
                     type="button"
                     className="button button--secondary"
@@ -300,6 +440,16 @@ export function ProblemPage({ user }: ProblemPageProps) {
                   >
                     Reset draft
                   </button>
+
+                  <label className="button button--secondary file-picker-button">
+                    Load file
+                    <input
+                      type="file"
+                      accept=".py,.cpp,.cc,.cxx,.c++,.txt"
+                      onChange={handleSourceFileSelected}
+                      hidden
+                    />
+                  </label>
                 </div>
               </div>
 
@@ -321,13 +471,8 @@ export function ProblemPage({ user }: ProblemPageProps) {
                 />
               </label>
 
-              <div className="submission-callout">
-                Submissions are processed asynchronously. After sending code, open
-                the detailed submission page to watch verdict updates live.
-              </div>
-
               <button type="submit" className="button" disabled={submitting}>
-                {submitting ? "Submitting..." : `Submit ${getLanguageLabel(language)} solution`}
+                {submitting ? "Submitting..." : `Submit ${getLanguageLabel(language)}`}
               </button>
             </form>
 
@@ -336,74 +481,85 @@ export function ProblemPage({ user }: ProblemPageProps) {
             ) : null}
           </Panel>
 
-          {latestSubmission ? (
-            <Panel title="Latest submission" subtitle="Most recent attempt from this page.">
-              <div className="list-card__header">
-                <div>
-                  <strong>Submission {latestSubmission.id}</strong>
-                  <div className="muted small-text">
-                    {new Date(latestSubmission.created_at).toLocaleString()}
-                  </div>
+          <Panel
+            title="My submissions for this problem"
+            actions={
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => void loadProblemSubmissions()}
+              >
+                Refresh
+              </button>
+            }
+          >
+            {submissionsLoading ? (
+              <LoadingState label="Loading problem submissions..." />
+            ) : null}
+
+            {!submissionsLoading && problemSubmissions.length === 0 ? (
+              <EmptyState
+                title="No submissions yet"
+                description="Your submissions for this problem will appear here."
+              />
+            ) : null}
+
+            {!submissionsLoading && visibleSubmissions.length > 0 ? (
+              <>
+                <div className="list-stack">
+                  {visibleSubmissions.map((submission) => (
+                    <article key={submission.id} className="list-card">
+                      <div className="list-card__header">
+                        <div>
+                          <strong>{submission.id}</strong>
+                          <div className="muted small-text">
+                            {new Date(submission.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        <StatusPill value={submission.verdict} />
+                      </div>
+
+                      <div className="meta-grid">
+                        <span>Status: {submission.status}</span>
+                        <span>Language: {submission.language}</span>
+                        <span>
+                          Passed: {submission.passed_test_count}/
+                          {submission.total_test_count}
+                        </span>
+                        <span>Time: {submission.execution_time_ms ?? "—"} ms</span>
+                      </div>
+
+                      <div className="inline-links-row">
+                        <Link
+                          to={`/submissions/${submission.id}`}
+                          className="inline-link"
+                        >
+                          Open submission
+                        </Link>
+                      </div>
+                    </article>
+                  ))}
                 </div>
-                <StatusPill value={latestSubmission.verdict} />
-              </div>
 
-              <div className="meta-grid">
-                <span>Status: {latestSubmission.status}</span>
-                <span>Language: {latestSubmission.language}</span>
-                <span>
-                  Passed: {latestSubmission.passed_test_count}/
-                  {latestSubmission.total_test_count}
-                </span>
-                <span>Failed test: {latestSubmission.failed_test_position ?? "—"}</span>
-              </div>
-
-              <div className="inline-links-row">
-                <Link
-                  to={`/submissions/${latestSubmission.id}`}
-                  className="inline-link"
-                >
-                  Open detailed submission page
-                </Link>
-              </div>
-            </Panel>
-          ) : null}
+                <Pagination
+                  page={submissionsPage}
+                  totalPages={totalSubmissionPages}
+                  onPageChange={setSubmissionsPage}
+                />
+              </>
+            ) : null}
+          </Panel>
         </div>
 
         <aside className="problem-layout__side">
-          <Panel title="Quick guide" subtitle="Useful reminders while solving.">
-            <div className="hint-list">
-              <div className="hint-card">
-                <strong>Drafts are local</strong>
-                <span>
-                  Each problem and language combination has its own browser draft.
-                </span>
-              </div>
-
-              <div className="hint-card">
-                <strong>Judge is asynchronous</strong>
-                <span>
-                  Verdicts may appear a moment later while workers process the queue.
-                </span>
-              </div>
-
-              <div className="hint-card">
-                <strong>Language templates</strong>
-                <span>
-                  Use the template button to reset the editor to a clean starter file.
-                </span>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel title="Navigation" subtitle="Move quickly around the contest.">
+          <Panel title="Navigation">
             <div className="hint-list">
               <Link
                 to={`/contests/${problem.contest.slug}`}
                 className="action-card"
               >
                 <strong>Contest overview</strong>
-                <span>Return to the full problem list and contest information.</span>
+                <span>Return to the problem list.</span>
               </Link>
 
               <Link
@@ -411,7 +567,7 @@ export function ProblemPage({ user }: ProblemPageProps) {
                 className="action-card"
               >
                 <strong>Standings</strong>
-                <span>Check current scoreboard and your relative position.</span>
+                <span>Open the current scoreboard.</span>
               </Link>
             </div>
           </Panel>

@@ -30,6 +30,7 @@ import type {
 import { EmptyState } from "../components/EmptyState";
 import { FormErrorList } from "../components/FormErrorList";
 import { LoadingState } from "../components/LoadingState";
+import { Pagination } from "../components/Pagination";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
 import {
@@ -97,6 +98,8 @@ const STORAGE_KEYS = {
   testCaseId: "contester:admin:selectedTestCaseId",
   submissionFilters: "contester:admin:submissionFilters",
 };
+
+const SUBMISSIONS_PAGE_SIZE = 15;
 
 const initialQueueStatus: QueueStatus = {
   pending_count: 0,
@@ -284,6 +287,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
   );
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  const [submissionsPage, setSubmissionsPage] = useState(1);
 
   const [contestFormErrors, setContestFormErrors] = useState<string[]>([]);
   const [contestEditErrors, setContestEditErrors] = useState<string[]>([]);
@@ -307,8 +311,33 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     [testCases, selectedTestCaseId],
   );
 
+  const sortedSubmissions = useMemo(
+    () =>
+      [...submissions].sort(
+        (left, right) =>
+          new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+      ),
+    [submissions],
+  );
+
+  const visibleSubmissions = useMemo(() => {
+    const start = (submissionsPage - 1) * SUBMISSIONS_PAGE_SIZE;
+    return sortedSubmissions.slice(start, start + SUBMISSIONS_PAGE_SIZE);
+  }, [sortedSubmissions, submissionsPage]);
+
+  const totalSubmissionPages = Math.max(
+    1,
+    Math.ceil(sortedSubmissions.length / SUBMISSIONS_PAGE_SIZE),
+  );
+
   const queueHasActiveWork =
     queueStatus.pending_count > 0 || queueStatus.running_count > 0;
+
+  useEffect(() => {
+    if (submissionsPage > totalSubmissionPages) {
+      setSubmissionsPage(totalSubmissionPages);
+    }
+  }, [submissionsPage, totalSubmissionPages]);
 
   useEffect(() => {
     writeStorageValue(STORAGE_KEYS.tab, activeTab);
@@ -428,6 +457,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     try {
       const data = await getAdminSubmissions(filters);
       setSubmissions(data);
+      setSubmissionsPage(1);
     } finally {
       setSubmissionsLoading(false);
     }
@@ -833,10 +863,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
   if (!user) {
     return (
       <Panel title="Authentication required">
-        <EmptyState
-          title="Login required"
-          description="Please log in first."
-        />
+        <EmptyState title="Login required" description="Please log in first." />
       </Panel>
     );
   }
@@ -853,7 +880,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
   if (loading) {
     return (
-      <Panel title="Admin workspace" subtitle="Loading organizer tools.">
+      <Panel title="Admin workspace">
         <LoadingState label="Loading organizer tools..." />
       </Panel>
     );
@@ -863,12 +890,8 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     <div className="stack">
       <section className="page-head">
         <div>
-          <span className="page-head__eyebrow">Organizer tools</span>
-          <h1 className="page-head__title">Admin workspace</h1>
-          <p className="page-head__subtitle">
-            Manage contest content, inspect judge activity, and operate the
-            submission pipeline from one place.
-          </p>
+          <span className="page-head__eyebrow">Admin workspace</span>
+          <h1 className="page-head__title">Organizer tools</h1>
         </div>
       </section>
 
@@ -877,10 +900,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
         <p className="feedback feedback--success">{successMessage}</p>
       ) : null}
 
-      <Panel
-        title="Workspace navigation"
-        subtitle="Choose an area of responsibility."
-      >
+      <Panel title="Workspace">
         <div className="admin-tabs">
           <button
             type="button"
@@ -924,15 +944,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
         <div className="workspace-grid">
           <div className="workspace-grid__main">
             <Panel
-              title="Judge queue"
-              subtitle="Operational overview of the asynchronous judging pipeline."
+              title="Queue"
               actions={
                 <button
                   type="button"
                   className="button button--secondary"
                   onClick={() => void loadQueueStatus()}
                 >
-                  Refresh queue
+                  Refresh
                 </button>
               }
             >
@@ -960,16 +979,13 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               </div>
 
               {queueHasActiveWork ? (
-                <p className="muted small-text">
-                  The judge queue currently has active work in progress.
-                </p>
+                <p className="muted small-text">The judge queue is active.</p>
               ) : null}
             </Panel>
+          </div>
 
-            <Panel
-              title="Current selection"
-              subtitle="The workspace remembers these entities between page reloads."
-            >
+          <div className="workspace-grid__side">
+            <Panel title="Current selection">
               <div className="hint-list">
                 <div className="hint-card">
                   <strong>Contest</strong>
@@ -998,46 +1014,19 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               </div>
             </Panel>
           </div>
-
-          <div className="workspace-grid__side">
-            <Panel
-              title="Recommended flow"
-              subtitle="Typical organizer workflow inside the system."
-            >
-              <div className="hint-list">
-                <div className="hint-card">
-                  <strong>1. Prepare contest</strong>
-                  <span>Create or edit a contest and define its publication status.</span>
-                </div>
-                <div className="hint-card">
-                  <strong>2. Add problems</strong>
-                  <span>Fill statements, constraints, samples, and metadata.</span>
-                </div>
-                <div className="hint-card">
-                  <strong>3. Configure tests</strong>
-                  <span>Build visible and hidden cases for each problem.</span>
-                </div>
-                <div className="hint-card">
-                  <strong>4. Monitor submissions</strong>
-                  <span>Inspect verdicts, queue load, and rejudge when needed.</span>
-                </div>
-              </div>
-            </Panel>
-          </div>
         </div>
       ) : null}
 
       {activeTab === "contests" ? (
         <Panel
           title="Contests"
-          subtitle="Select an existing contest or create a new one."
           actions={
             <button
               type="button"
               className="button button--secondary"
               onClick={() => void loadContests()}
             >
-              Reload contests
+              Reload
             </button>
           }
         >
@@ -1073,7 +1062,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
             </div>
 
             <div className="stack">
-              <Panel title="Create contest" subtitle="Add a new contest entity.">
+              <Panel title="Create contest">
                 <FormErrorList errors={contestFormErrors} />
 
                 <form className="form-stack" onSubmit={handleCreateContest}>
@@ -1187,10 +1176,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               </Panel>
 
               {selectedContest ? (
-                <Panel
-                  title="Edit selected contest"
-                  subtitle={`Currently selected: ${selectedContest.title}`}
-                >
+                <Panel title="Edit selected contest">
                   <FormErrorList errors={contestEditErrors} />
 
                   <form className="form-stack" onSubmit={handleUpdateContest}>
@@ -1304,7 +1290,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         to={`/contests/${selectedContest.slug}`}
                         className="inline-link"
                       >
-                        Open public contest page
+                        Open contest
                       </Link>
                     </div>
                   </form>
@@ -1316,10 +1302,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       ) : null}
 
       {activeTab === "problems" ? (
-        <Panel
-          title="Problems"
-          subtitle="Manage problem statements for the selected contest."
-        >
+        <Panel title="Problems">
           {!selectedContest ? (
             <EmptyState
               title="No contest selected"
@@ -1362,10 +1345,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               </div>
 
               <div className="stack">
-                <Panel
-                  title="Create problem"
-                  subtitle={`Contest: ${selectedContest.title}`}
-                >
+                <Panel title="Create problem">
                   <FormErrorList errors={problemFormErrors} />
 
                   <form className="form-stack" onSubmit={handleCreateProblem}>
@@ -1578,10 +1558,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                 </Panel>
 
                 {selectedProblem ? (
-                  <Panel
-                    title="Edit selected problem"
-                    subtitle={`Selected: ${selectedProblem.code} — ${selectedProblem.title}`}
-                  >
+                  <Panel title="Edit selected problem">
                     <FormErrorList errors={problemEditErrors} />
 
                     <form className="form-stack" onSubmit={handleUpdateProblem}>
@@ -1796,7 +1773,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           to={`/contests/${selectedContest?.slug}/problems/${selectedProblem.code}`}
                           className="inline-link"
                         >
-                          Open public problem page
+                          Open problem
                         </Link>
                       </div>
                     </form>
@@ -1809,10 +1786,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       ) : null}
 
       {activeTab === "test-cases" ? (
-        <Panel
-          title="Test cases"
-          subtitle="Maintain the selected problem test suite."
-        >
+        <Panel title="Test cases">
           {!selectedProblem ? (
             <EmptyState
               title="No problem selected"
@@ -1854,10 +1828,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               </div>
 
               <div className="stack">
-                <Panel
-                  title="Create test case"
-                  subtitle={`Problem: ${selectedProblem.code} — ${selectedProblem.title}`}
-                >
+                <Panel title="Create test case">
                   <FormErrorList errors={testCaseFormErrors} />
 
                   <form className="form-stack" onSubmit={handleCreateTestCase}>
@@ -1952,10 +1923,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                 </Panel>
 
                 {selectedTestCase ? (
-                  <Panel
-                    title="Edit selected test case"
-                    subtitle={`Currently selected: #${selectedTestCase.position}`}
-                  >
+                  <Panel title="Edit selected test case">
                     <FormErrorList errors={testCaseEditErrors} />
 
                     <form className="form-stack" onSubmit={handleUpdateTestCase}>
@@ -2056,150 +2024,153 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       ) : null}
 
       {activeTab === "submissions" ? (
-        <div className="workspace-grid">
-          <div className="workspace-grid__main">
-            <Panel
-              title="Submission filters"
-              subtitle="Narrow down the submission list by contest, problem, user, or verdict."
-            >
-              <form className="form-stack" onSubmit={handleApplySubmissionFilters}>
-                <div className="two-column-grid">
-                  <label className="field">
-                    <span>Contest slug</span>
-                    <input
-                      value={submissionFilters.contest_slug}
-                      onChange={(event) =>
-                        setSubmissionFilters((current) => ({
-                          ...current,
-                          contest_slug: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+        <div className="stack">
+          <Panel title="Submission filters">
+            <form className="form-stack" onSubmit={handleApplySubmissionFilters}>
+              <div className="two-column-grid">
+                <label className="field">
+                  <span>Contest slug</span>
+                  <input
+                    value={submissionFilters.contest_slug}
+                    onChange={(event) =>
+                      setSubmissionFilters((current) => ({
+                        ...current,
+                        contest_slug: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
 
-                  <label className="field">
-                    <span>Problem code</span>
-                    <input
-                      value={submissionFilters.problem_code}
-                      onChange={(event) =>
-                        setSubmissionFilters((current) => ({
-                          ...current,
-                          problem_code: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
+                <label className="field">
+                  <span>Problem code</span>
+                  <input
+                    value={submissionFilters.problem_code}
+                    onChange={(event) =>
+                      setSubmissionFilters((current) => ({
+                        ...current,
+                        problem_code: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
 
-                <div className="two-column-grid">
-                  <label className="field">
-                    <span>Username</span>
-                    <input
-                      value={submissionFilters.username}
-                      onChange={(event) =>
-                        setSubmissionFilters((current) => ({
-                          ...current,
-                          username: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+              <div className="two-column-grid">
+                <label className="field">
+                  <span>Username</span>
+                  <input
+                    value={submissionFilters.username}
+                    onChange={(event) =>
+                      setSubmissionFilters((current) => ({
+                        ...current,
+                        username: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
 
-                  <label className="field">
-                    <span>Language</span>
-                    <select
-                      value={submissionFilters.language}
-                      onChange={(event) =>
-                        setSubmissionFilters((current) => ({
-                          ...current,
-                          language: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">any</option>
-                      <option value="python">python</option>
-                      <option value="cpp">cpp</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="two-column-grid">
-                  <label className="field">
-                    <span>Status</span>
-                    <select
-                      value={submissionFilters.status}
-                      onChange={(event) =>
-                        setSubmissionFilters((current) => ({
-                          ...current,
-                          status: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">any</option>
-                      <option value="pending">pending</option>
-                      <option value="running">running</option>
-                      <option value="finished">finished</option>
-                    </select>
-                  </label>
-
-                  <label className="field">
-                    <span>Verdict</span>
-                    <select
-                      value={submissionFilters.verdict}
-                      onChange={(event) =>
-                        setSubmissionFilters((current) => ({
-                          ...current,
-                          verdict: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">any</option>
-                      <option value="pending">pending</option>
-                      <option value="accepted">accepted</option>
-                      <option value="wrong_answer">wrong_answer</option>
-                      <option value="runtime_error">runtime_error</option>
-                      <option value="time_limit_exceeded">time_limit_exceeded</option>
-                      <option value="compilation_error">compilation_error</option>
-                      <option value="internal_error">internal_error</option>
-                      <option value="no_tests">no_tests</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="inline-links-row">
-                  <button type="submit" className="button" disabled={submissionsLoading}>
-                    {submissionsLoading ? "Loading..." : "Apply filters"}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="button button--secondary"
-                    onClick={() => void handleClearSubmissionFilters()}
+                <label className="field">
+                  <span>Language</span>
+                  <select
+                    value={submissionFilters.language}
+                    onChange={(event) =>
+                      setSubmissionFilters((current) => ({
+                        ...current,
+                        language: event.target.value,
+                      }))
+                    }
                   >
-                    Clear
-                  </button>
-                </div>
-              </form>
-            </Panel>
-          </div>
+                    <option value="">any</option>
+                    <option value="python">python</option>
+                    <option value="cpp">cpp</option>
+                  </select>
+                </label>
+              </div>
 
-          <div className="workspace-grid__side">
-            <Panel
-              title="Filtered submissions"
-              subtitle="Inspect verdicts and trigger rejudge when needed."
-            >
-              {submissionsLoading ? <LoadingState label="Loading submissions..." /> : null}
+              <div className="two-column-grid">
+                <label className="field">
+                  <span>Status</span>
+                  <select
+                    value={submissionFilters.status}
+                    onChange={(event) =>
+                      setSubmissionFilters((current) => ({
+                        ...current,
+                        status: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">any</option>
+                    <option value="pending">pending</option>
+                    <option value="running">running</option>
+                    <option value="finished">finished</option>
+                  </select>
+                </label>
 
-              {!submissionsLoading && submissions.length === 0 ? (
-                <EmptyState
-                  title="No submissions found"
-                  description="Try changing filters or clear them to see a broader list."
-                />
-              ) : null}
+                <label className="field">
+                  <span>Verdict</span>
+                  <select
+                    value={submissionFilters.verdict}
+                    onChange={(event) =>
+                      setSubmissionFilters((current) => ({
+                        ...current,
+                        verdict: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">any</option>
+                    <option value="pending">pending</option>
+                    <option value="accepted">accepted</option>
+                    <option value="wrong_answer">wrong_answer</option>
+                    <option value="runtime_error">runtime_error</option>
+                    <option value="time_limit_exceeded">time_limit_exceeded</option>
+                    <option value="compilation_error">compilation_error</option>
+                    <option value="internal_error">internal_error</option>
+                    <option value="no_tests">no_tests</option>
+                  </select>
+                </label>
+              </div>
 
-              {submissions.length > 0 ? (
-                <div className="list-stack">
-                  {submissions.map((submission) => (
+              <div className="inline-links-row">
+                <button type="submit" className="button" disabled={submissionsLoading}>
+                  {submissionsLoading ? "Loading..." : "Apply filters"}
+                </button>
+
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => void handleClearSubmissionFilters()}
+                >
+                  Clear
+                </button>
+              </div>
+            </form>
+          </Panel>
+
+          <Panel
+            title="Submissions"
+            actions={
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => void loadSubmissions(submissionFilters)}
+              >
+                Refresh
+              </button>
+            }
+          >
+            {submissionsLoading ? <LoadingState label="Loading submissions..." /> : null}
+
+            {!submissionsLoading && sortedSubmissions.length === 0 ? (
+              <EmptyState
+                title="No submissions found"
+                description="Try changing filters or clear them to see a broader list."
+              />
+            ) : null}
+
+            {!submissionsLoading && visibleSubmissions.length > 0 ? (
+              <>
+                <div className="list-stack admin-submissions-list">
+                  {visibleSubmissions.map((submission) => (
                     <article key={submission.id} className="list-card">
                       <div className="list-card__header">
                         <div>
@@ -2248,9 +2219,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                     </article>
                   ))}
                 </div>
-              ) : null}
-            </Panel>
-          </div>
+
+                <Pagination
+                  page={submissionsPage}
+                  totalPages={totalSubmissionPages}
+                  onPageChange={setSubmissionsPage}
+                />
+              </>
+            ) : null}
+          </Panel>
         </div>
       ) : null}
     </div>
