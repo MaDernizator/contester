@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getSubmission, isApiError } from "../api/client";
 import type { Submission, User } from "../api/types";
+import { EmptyState } from "../components/EmptyState";
+import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
@@ -70,7 +72,10 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
   if (!user) {
     return (
       <Panel title="Authentication required">
-        <p className="muted">Please log in first.</p>
+        <EmptyState
+          title="Login required"
+          description="Please log in before opening submission details."
+        />
       </Panel>
     );
   }
@@ -78,7 +83,7 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
   if (loading) {
     return (
       <Panel title="Submission">
-        <p className="muted">Loading submission...</p>
+        <LoadingState label="Loading submission..." />
       </Panel>
     );
   }
@@ -94,16 +99,26 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
   if (!submission) {
     return (
       <Panel title="Submission">
-        <p className="muted">Submission not found.</p>
+        <EmptyState
+          title="Submission not found"
+          description="The requested submission could not be loaded."
+        />
       </Panel>
     );
   }
 
   return (
     <div className="stack">
-      <Panel
-        title={`Submission ${submission.id}`}
-        actions={
+      <section className="page-head">
+        <div>
+          <span className="page-head__eyebrow">Submission details</span>
+          <h1 className="page-head__title">Submission {submission.id}</h1>
+          <p className="page-head__subtitle">
+            Inspect current judging state, logs, source code, and final verdict.
+          </p>
+        </div>
+
+        <div className="page-actions">
           <button
             type="button"
             className="button button--secondary"
@@ -111,33 +126,42 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
           >
             Refresh
           </button>
-        }
-      >
-        <div className="list-card__header">
-          <div>
-            <strong>
-              <Link
-                to={`/contests/${submission.contest.slug}/problems/${submission.problem.code}`}
-                className="inline-link"
-              >
-                {submission.problem.code} — {submission.problem.title}
-              </Link>
-            </strong>
-            <div className="muted small-text">
-              Created: {new Date(submission.created_at).toLocaleString()}
-            </div>
+        </div>
+      </section>
+
+      <Panel title="Summary" subtitle="Current state of this submission.">
+        <div className="submission-summary-grid">
+          <div className="submission-summary-card">
+            <span className="submission-summary-card__label">Verdict</span>
+            <StatusPill value={submission.verdict} />
           </div>
-          <StatusPill value={submission.verdict} />
+
+          <div className="submission-summary-card">
+            <span className="submission-summary-card__label">Status</span>
+            <strong>{submission.status}</strong>
+          </div>
+
+          <div className="submission-summary-card">
+            <span className="submission-summary-card__label">Language</span>
+            <strong>{submission.language}</strong>
+          </div>
+
+          <div className="submission-summary-card">
+            <span className="submission-summary-card__label">Execution time</span>
+            <strong>{submission.execution_time_ms ?? "—"} ms</strong>
+          </div>
         </div>
 
         <div className="meta-grid">
-          <span>Status: {submission.status}</span>
-          <span>Language: {submission.language}</span>
           <span>
-            Passed: {submission.passed_test_count}/{submission.total_test_count}
+            Problem: {submission.problem.code} — {submission.problem.title}
+          </span>
+          <span>Contest: {submission.contest.slug}</span>
+          <span>
+            Passed tests: {submission.passed_test_count}/{submission.total_test_count}
           </span>
           <span>Failed test: {submission.failed_test_position ?? "—"}</span>
-          <span>Execution time: {submission.execution_time_ms ?? "—"} ms</span>
+          <span>Created: {new Date(submission.created_at).toLocaleString()}</span>
           <span>
             Judged at:{" "}
             {submission.judged_at
@@ -162,19 +186,29 @@ export function SubmissionPage({ user }: SubmissionPageProps) {
         </div>
 
         {autoRefreshEnabled ? (
-          <p className="muted small-text">
-            Live updates are enabled while the submission is pending or running.
-          </p>
+          <div className="auto-refresh-banner">
+            <div className="auto-refresh-banner__dot" aria-hidden="true" />
+            <span>
+              Live updates are enabled while the submission is pending or running.
+            </span>
+          </div>
         ) : null}
       </Panel>
 
       {submission.judge_log ? (
-        <Panel title="Judge log">
+        <Panel title="Judge log" subtitle="Technical output from the judging pipeline.">
           <pre className="plain-code-block">{submission.judge_log}</pre>
         </Panel>
-      ) : null}
+      ) : (
+        <Panel title="Judge log" subtitle="Technical output from the judging pipeline.">
+          <EmptyState
+            title="No judge log yet"
+            description="The judge has not produced a log for this submission yet."
+          />
+        </Panel>
+      )}
 
-      <Panel title="Source code">
+      <Panel title="Source code" subtitle="Submitted program text.">
         <pre className="plain-code-block">{submission.source_code}</pre>
       </Panel>
     </div>

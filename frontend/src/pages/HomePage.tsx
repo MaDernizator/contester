@@ -7,9 +7,16 @@ import {
   registerParticipant,
 } from "../api/client";
 import type { Contest, User } from "../api/types";
+import { EmptyState } from "../components/EmptyState";
+import { FormErrorList } from "../components/FormErrorList";
+import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
 import { SubmissionsPanel } from "../features/submissions/SubmissionsPanel";
+import {
+  validateLoginForm,
+  validateRegisterForm,
+} from "../features/validation/forms";
 
 interface HomePageProps {
   user: User | null;
@@ -50,13 +57,10 @@ function ContestOverview({ contests }: { contests: Contest[] }) {
         title="Contests"
         subtitle="Published contests created by organizers will appear here."
       >
-        <div className="empty-state">
-          <h3>No contests yet</h3>
-          <p>
-            As soon as organizers publish contests, participants will see them
-            here.
-          </p>
-        </div>
+        <EmptyState
+          title="No contests yet"
+          description="As soon as organizers publish contests, participants will see them here."
+        />
       </Panel>
     );
   }
@@ -162,6 +166,7 @@ function AuthHero({
   busy,
   feedbackMessage,
   feedbackType,
+  validationErrors,
 }: {
   authMode: AuthMode;
   onSwitchMode: (mode: AuthMode) => void;
@@ -174,6 +179,7 @@ function AuthHero({
   busy: boolean;
   feedbackMessage: string | null;
   feedbackType: "success" | "error" | null;
+  validationErrors: string[];
 }) {
   return (
     <div className="landing-grid">
@@ -229,6 +235,8 @@ function AuthHero({
             Register
           </button>
         </div>
+
+        <FormErrorList errors={validationErrors} />
 
         {feedbackMessage && feedbackType ? (
           <p className={`feedback feedback--${feedbackType}`}>
@@ -360,6 +368,7 @@ export function HomePage({
   const [authFeedbackType, setAuthFeedbackType] = useState<
     "success" | "error" | null
   >(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   useEffect(() => {
     if (!user) {
@@ -406,10 +415,19 @@ export function HomePage({
     setAuthFeedbackMessage(null);
     setAuthFeedbackType(null);
 
+    const errors = validateLoginForm(loginState);
+    setValidationErrors(errors);
+
+    if (errors.length > 0) {
+      setAuthBusy(false);
+      return;
+    }
+
     try {
       await login(loginState.username, loginState.password);
       await onAuthenticated();
       setLoginState(initialLoginState);
+      setValidationErrors([]);
     } catch (error) {
       setAuthFeedbackType("error");
       setAuthFeedbackMessage(
@@ -426,6 +444,14 @@ export function HomePage({
     setAuthFeedbackMessage(null);
     setAuthFeedbackType(null);
 
+    const errors = validateRegisterForm(registerState);
+    setValidationErrors(errors);
+
+    if (errors.length > 0) {
+      setAuthBusy(false);
+      return;
+    }
+
     try {
       await registerParticipant({
         username: registerState.username,
@@ -440,6 +466,7 @@ export function HomePage({
       setAuthFeedbackMessage(
         "Account created successfully. You can sign in now.",
       );
+      setValidationErrors([]);
     } catch (error) {
       setAuthFeedbackType("error");
       setAuthFeedbackMessage(
@@ -453,7 +480,7 @@ export function HomePage({
   if (sessionLoading) {
     return (
       <Panel title="Loading" subtitle="Checking your session.">
-        <p className="muted">Please wait...</p>
+        <LoadingState label="Checking your session..." />
       </Panel>
     );
   }
@@ -462,7 +489,12 @@ export function HomePage({
     return (
       <AuthHero
         authMode={authMode}
-        onSwitchMode={setAuthMode}
+        onSwitchMode={(mode) => {
+          setAuthMode(mode);
+          setValidationErrors([]);
+          setAuthFeedbackMessage(null);
+          setAuthFeedbackType(null);
+        }}
         loginState={loginState}
         registerState={registerState}
         setLoginState={setLoginState}
@@ -472,6 +504,7 @@ export function HomePage({
         busy={authBusy}
         feedbackMessage={authFeedbackMessage}
         feedbackType={authFeedbackType}
+        validationErrors={validationErrors}
       />
     );
   }
@@ -523,7 +556,7 @@ export function HomePage({
             <AdminCommandCenter />
             {contestsLoading ? (
               <Panel title="Available contests">
-                <p className="muted">Loading contests...</p>
+                <LoadingState label="Loading contests..." />
               </Panel>
             ) : (
               <ContestOverview contests={contests} />
@@ -539,7 +572,7 @@ export function HomePage({
           <div className="dashboard-grid__main">
             {contestsLoading ? (
               <Panel title="Available contests">
-                <p className="muted">Loading contests...</p>
+                <LoadingState label="Loading contests..." />
               </Panel>
             ) : (
               <ContestOverview contests={contests} />

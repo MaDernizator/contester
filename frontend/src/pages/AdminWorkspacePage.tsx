@@ -27,14 +27,27 @@ import type {
   TestCaseSummary,
   User,
 } from "../api/types";
+import { EmptyState } from "../components/EmptyState";
+import { FormErrorList } from "../components/FormErrorList";
+import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
+import {
+  validateContestForm,
+  validateProblemForm,
+  validateTestCaseForm,
+} from "../features/validation/forms";
 
 interface AdminWorkspacePageProps {
   user: User | null;
 }
 
-type AdminTab = "overview" | "contests" | "problems" | "test-cases" | "submissions";
+type AdminTab =
+  | "overview"
+  | "contests"
+  | "problems"
+  | "test-cases"
+  | "submissions";
 
 interface ContestFormState {
   title: string;
@@ -172,8 +185,33 @@ function testCaseToForm(testCase: TestCase): TestCaseFormState {
   };
 }
 
+function readStorageValue(key: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(key);
+}
+
+function writeStorageValue(key: string, value: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(key, value);
+}
+
+function removeStorageValue(key: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(key);
+}
+
 function readStoredTab(): AdminTab {
-  const value = window.localStorage.getItem(STORAGE_KEYS.tab);
+  const value = readStorageValue(STORAGE_KEYS.tab);
+
   if (
     value === "overview" ||
     value === "contests" ||
@@ -189,7 +227,7 @@ function readStoredTab(): AdminTab {
 
 function readStoredSubmissionFilters(): SubmissionFilterState {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.submissionFilters);
+    const raw = readStorageValue(STORAGE_KEYS.submissionFilters);
     if (!raw) {
       return initialSubmissionFilters;
     }
@@ -220,14 +258,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
   const [contests, setContests] = useState<Contest[]>([]);
   const [selectedContestId, setSelectedContestId] = useState(
-    () => window.localStorage.getItem(STORAGE_KEYS.contestId) ?? "",
+    () => readStorageValue(STORAGE_KEYS.contestId) ?? "",
   );
   const [createContestForm, setCreateContestForm] = useState(initialContestForm);
   const [editContestForm, setEditContestForm] = useState(initialContestForm);
 
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [selectedProblemId, setSelectedProblemId] = useState(
-    () => window.localStorage.getItem(STORAGE_KEYS.problemId) ?? "",
+    () => readStorageValue(STORAGE_KEYS.problemId) ?? "",
   );
   const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null);
   const [createProblemForm, setCreateProblemForm] = useState(initialProblemForm);
@@ -235,7 +273,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([]);
   const [selectedTestCaseId, setSelectedTestCaseId] = useState(
-    () => window.localStorage.getItem(STORAGE_KEYS.testCaseId) ?? "",
+    () => readStorageValue(STORAGE_KEYS.testCaseId) ?? "",
   );
   const [selectedTestCase, setSelectedTestCase] = useState<TestCase | null>(null);
   const [createTestCaseForm, setCreateTestCaseForm] = useState(initialTestCaseForm);
@@ -246,6 +284,13 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
   );
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
+
+  const [contestFormErrors, setContestFormErrors] = useState<string[]>([]);
+  const [contestEditErrors, setContestEditErrors] = useState<string[]>([]);
+  const [problemFormErrors, setProblemFormErrors] = useState<string[]>([]);
+  const [problemEditErrors, setProblemEditErrors] = useState<string[]>([]);
+  const [testCaseFormErrors, setTestCaseFormErrors] = useState<string[]>([]);
+  const [testCaseEditErrors, setTestCaseEditErrors] = useState<string[]>([]);
 
   const selectedContest = useMemo(
     () => contests.find((contest) => contest.id === selectedContestId) ?? null,
@@ -266,35 +311,35 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     queueStatus.pending_count > 0 || queueStatus.running_count > 0;
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.tab, activeTab);
+    writeStorageValue(STORAGE_KEYS.tab, activeTab);
   }, [activeTab]);
 
   useEffect(() => {
     if (selectedContestId) {
-      window.localStorage.setItem(STORAGE_KEYS.contestId, selectedContestId);
+      writeStorageValue(STORAGE_KEYS.contestId, selectedContestId);
     } else {
-      window.localStorage.removeItem(STORAGE_KEYS.contestId);
+      removeStorageValue(STORAGE_KEYS.contestId);
     }
   }, [selectedContestId]);
 
   useEffect(() => {
     if (selectedProblemId) {
-      window.localStorage.setItem(STORAGE_KEYS.problemId, selectedProblemId);
+      writeStorageValue(STORAGE_KEYS.problemId, selectedProblemId);
     } else {
-      window.localStorage.removeItem(STORAGE_KEYS.problemId);
+      removeStorageValue(STORAGE_KEYS.problemId);
     }
   }, [selectedProblemId]);
 
   useEffect(() => {
     if (selectedTestCaseId) {
-      window.localStorage.setItem(STORAGE_KEYS.testCaseId, selectedTestCaseId);
+      writeStorageValue(STORAGE_KEYS.testCaseId, selectedTestCaseId);
     } else {
-      window.localStorage.removeItem(STORAGE_KEYS.testCaseId);
+      removeStorageValue(STORAGE_KEYS.testCaseId);
     }
   }, [selectedTestCaseId]);
 
   useEffect(() => {
-    window.localStorage.setItem(
+    writeStorageValue(
       STORAGE_KEYS.submissionFilters,
       JSON.stringify(submissionFilters),
     );
@@ -483,6 +528,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const errors = validateContestForm(createContestForm);
+    setContestFormErrors(errors);
+
+    if (errors.length > 0) {
+      setBusyAction(null);
+      return;
+    }
+
     try {
       const created = await createAdminContest({
         title: createContestForm.title,
@@ -496,6 +549,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       await loadContests();
       setSelectedContestId(created.id);
       setCreateContestForm(initialContestForm);
+      setContestFormErrors([]);
       setSuccessMessage(`Contest "${created.title}" created.`);
       setActiveTab("contests");
     } catch (error) {
@@ -517,6 +571,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const errors = validateContestForm(editContestForm);
+    setContestEditErrors(errors);
+
+    if (errors.length > 0) {
+      setBusyAction(null);
+      return;
+    }
+
     try {
       await updateAdminContest(selectedContestId, {
         title: editContestForm.title,
@@ -528,6 +590,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       });
 
       await loadContests();
+      setContestEditErrors([]);
       setSuccessMessage(`Contest "${editContestForm.title}" updated.`);
     } catch (error) {
       setErrorMessage(
@@ -549,6 +612,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const errors = validateProblemForm(createProblemForm);
+    setProblemFormErrors(errors);
+
+    if (errors.length > 0) {
+      setBusyAction(null);
+      return;
+    }
+
     try {
       const created = await createAdminProblem({
         contestId: selectedContestId,
@@ -569,6 +640,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       await loadProblems(selectedContestId);
       setSelectedProblemId(created.id);
       setCreateProblemForm(initialProblemForm);
+      setProblemFormErrors([]);
       setSuccessMessage(`Problem "${created.code}" created.`);
       setActiveTab("problems");
     } catch (error) {
@@ -590,6 +662,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const errors = validateProblemForm(editProblemForm);
+    setProblemEditErrors(errors);
+
+    if (errors.length > 0) {
+      setBusyAction(null);
+      return;
+    }
+
     try {
       await updateAdminProblem(selectedProblemId, {
         code: editProblemForm.code,
@@ -608,6 +688,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
       await loadProblems(selectedContestId);
       await loadProblemDetail(selectedProblemId);
+      setProblemEditErrors([]);
       setSuccessMessage(`Problem "${editProblemForm.code}" updated.`);
     } catch (error) {
       setErrorMessage(
@@ -629,6 +710,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const errors = validateTestCaseForm(createTestCaseForm);
+    setTestCaseFormErrors(errors);
+
+    if (errors.length > 0) {
+      setBusyAction(null);
+      return;
+    }
+
     try {
       const created = await createAdminTestCase({
         problemId: selectedProblemId,
@@ -642,6 +731,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       await loadTestCases(selectedProblemId);
       setSelectedTestCaseId(created.id);
       setCreateTestCaseForm(initialTestCaseForm);
+      setTestCaseFormErrors([]);
       setSuccessMessage(`Test case #${created.position} created.`);
       setActiveTab("test-cases");
     } catch (error) {
@@ -663,6 +753,14 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const errors = validateTestCaseForm(editTestCaseForm);
+    setTestCaseEditErrors(errors);
+
+    if (errors.length > 0) {
+      setBusyAction(null);
+      return;
+    }
+
     try {
       await updateAdminTestCase(selectedTestCaseId, {
         input_data: editTestCaseForm.input_data,
@@ -674,6 +772,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
       await loadTestCases(selectedProblemId);
       await loadTestCaseDetail(selectedTestCaseId);
+      setTestCaseEditErrors([]);
       setSuccessMessage(`Test case #${editTestCaseForm.position} updated.`);
     } catch (error) {
       setErrorMessage(
@@ -684,7 +783,9 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
     }
   }
 
-  async function handleApplySubmissionFilters(event: React.FormEvent<HTMLFormElement>) {
+  async function handleApplySubmissionFilters(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
     setErrorMessage(null);
 
@@ -732,7 +833,10 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
   if (!user) {
     return (
       <Panel title="Authentication required">
-        <p className="muted">Please log in first.</p>
+        <EmptyState
+          title="Login required"
+          description="Please log in first."
+        />
       </Panel>
     );
   }
@@ -750,7 +854,7 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
   if (loading) {
     return (
       <Panel title="Admin workspace" subtitle="Loading organizer tools.">
-        <p className="muted">Please wait...</p>
+        <LoadingState label="Loading organizer tools..." />
       </Panel>
     );
   }
@@ -869,7 +973,11 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               <div className="hint-list">
                 <div className="hint-card">
                   <strong>Contest</strong>
-                  <span>{selectedContest ? `${selectedContest.title} (${selectedContest.slug})` : "Not selected"}</span>
+                  <span>
+                    {selectedContest
+                      ? `${selectedContest.title} (${selectedContest.slug})`
+                      : "Not selected"}
+                  </span>
                 </div>
                 <div className="hint-card">
                   <strong>Problem</strong>
@@ -936,7 +1044,10 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
           <div className="workspace-two-column">
             <div className="list-stack">
               {contests.length === 0 ? (
-                <p className="muted">No contests yet.</p>
+                <EmptyState
+                  title="No contests yet"
+                  description="Create the first contest to start building the event."
+                />
               ) : (
                 contests.map((contest) => (
                   <button
@@ -963,17 +1074,22 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
 
             <div className="stack">
               <Panel title="Create contest" subtitle="Add a new contest entity.">
+                <FormErrorList errors={contestFormErrors} />
+
                 <form className="form-stack" onSubmit={handleCreateContest}>
                   <label className="field">
                     <span>Title</span>
                     <input
                       value={createContestForm.title}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setCreateContestForm((current) => ({
                           ...current,
                           title: event.target.value,
-                        }))
-                      }
+                        }));
+                        if (contestFormErrors.length > 0) {
+                          setContestFormErrors([]);
+                        }
+                      }}
                     />
                   </label>
 
@@ -981,12 +1097,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                     <span>Slug</span>
                     <input
                       value={createContestForm.slug}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setCreateContestForm((current) => ({
                           ...current,
                           slug: event.target.value,
-                        }))
-                      }
+                        }));
+                        if (contestFormErrors.length > 0) {
+                          setContestFormErrors([]);
+                        }
+                      }}
                     />
                   </label>
 
@@ -1026,12 +1145,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <span>Starts at</span>
                       <input
                         value={createContestForm.starts_at}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setCreateContestForm((current) => ({
                             ...current,
                             starts_at: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (contestFormErrors.length > 0) {
+                            setContestFormErrors([]);
+                          }
+                        }}
                         placeholder="2026-03-20T10:00:00Z"
                       />
                     </label>
@@ -1041,12 +1163,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                     <span>Ends at</span>
                     <input
                       value={createContestForm.ends_at}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setCreateContestForm((current) => ({
                           ...current,
                           ends_at: event.target.value,
-                        }))
-                      }
+                        }));
+                        if (contestFormErrors.length > 0) {
+                          setContestFormErrors([]);
+                        }
+                      }}
                       placeholder="2026-03-20T15:00:00Z"
                     />
                   </label>
@@ -1066,17 +1191,22 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                   title="Edit selected contest"
                   subtitle={`Currently selected: ${selectedContest.title}`}
                 >
+                  <FormErrorList errors={contestEditErrors} />
+
                   <form className="form-stack" onSubmit={handleUpdateContest}>
                     <label className="field">
                       <span>Title</span>
                       <input
                         value={editContestForm.title}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setEditContestForm((current) => ({
                             ...current,
                             title: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (contestEditErrors.length > 0) {
+                            setContestEditErrors([]);
+                          }
+                        }}
                       />
                     </label>
 
@@ -1084,12 +1214,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <span>Slug</span>
                       <input
                         value={editContestForm.slug}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setEditContestForm((current) => ({
                             ...current,
                             slug: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (contestEditErrors.length > 0) {
+                            setContestEditErrors([]);
+                          }
+                        }}
                       />
                     </label>
 
@@ -1129,12 +1262,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <span>Starts at</span>
                         <input
                           value={editContestForm.starts_at}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setEditContestForm((current) => ({
                               ...current,
                               starts_at: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (contestEditErrors.length > 0) {
+                              setContestEditErrors([]);
+                            }
+                          }}
                         />
                       </label>
                     </div>
@@ -1143,12 +1279,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <span>Ends at</span>
                       <input
                         value={editContestForm.ends_at}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setEditContestForm((current) => ({
                             ...current,
                             ends_at: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (contestEditErrors.length > 0) {
+                            setContestEditErrors([]);
+                          }
+                        }}
                       />
                     </label>
 
@@ -1182,12 +1321,18 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
           subtitle="Manage problem statements for the selected contest."
         >
           {!selectedContest ? (
-            <p className="muted">Select a contest first from the Contests tab.</p>
+            <EmptyState
+              title="No contest selected"
+              description="Select a contest first from the Contests tab."
+            />
           ) : (
             <div className="workspace-two-column">
               <div className="list-stack">
                 {problems.length === 0 ? (
-                  <p className="muted">No problems in this contest yet.</p>
+                  <EmptyState
+                    title="No problems yet"
+                    description="Create the first problem for the selected contest."
+                  />
                 ) : (
                   problems.map((problem) => (
                     <button
@@ -1221,18 +1366,23 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                   title="Create problem"
                   subtitle={`Contest: ${selectedContest.title}`}
                 >
+                  <FormErrorList errors={problemFormErrors} />
+
                   <form className="form-stack" onSubmit={handleCreateProblem}>
                     <div className="two-column-grid">
                       <label className="field">
                         <span>Code</span>
                         <input
                           value={createProblemForm.code}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setCreateProblemForm((current) => ({
                               ...current,
                               code: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (problemFormErrors.length > 0) {
+                              setProblemFormErrors([]);
+                            }
+                          }}
                         />
                       </label>
 
@@ -1240,12 +1390,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <span>Title</span>
                         <input
                           value={createProblemForm.title}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setCreateProblemForm((current) => ({
                               ...current,
                               title: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (problemFormErrors.length > 0) {
+                              setProblemFormErrors([]);
+                            }
+                          }}
                         />
                       </label>
                     </div>
@@ -1255,12 +1408,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <textarea
                         rows={6}
                         value={createProblemForm.statement}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setCreateProblemForm((current) => ({
                             ...current,
                             statement: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (problemFormErrors.length > 0) {
+                            setProblemFormErrors([]);
+                          }
+                        }}
                       />
                     </label>
 
@@ -1343,12 +1499,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           type="number"
                           min={100}
                           value={createProblemForm.time_limit_ms}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setCreateProblemForm((current) => ({
                               ...current,
                               time_limit_ms: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (problemFormErrors.length > 0) {
+                              setProblemFormErrors([]);
+                            }
+                          }}
                         />
                       </label>
 
@@ -1358,12 +1517,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           type="number"
                           min={16}
                           value={createProblemForm.memory_limit_mb}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setCreateProblemForm((current) => ({
                               ...current,
                               memory_limit_mb: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (problemFormErrors.length > 0) {
+                              setProblemFormErrors([]);
+                            }
+                          }}
                         />
                       </label>
                     </div>
@@ -1375,12 +1537,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           type="number"
                           min={1}
                           value={createProblemForm.position}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setCreateProblemForm((current) => ({
                               ...current,
                               position: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (problemFormErrors.length > 0) {
+                              setProblemFormErrors([]);
+                            }
+                          }}
                         />
                       </label>
 
@@ -1417,18 +1582,23 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                     title="Edit selected problem"
                     subtitle={`Selected: ${selectedProblem.code} — ${selectedProblem.title}`}
                   >
+                    <FormErrorList errors={problemEditErrors} />
+
                     <form className="form-stack" onSubmit={handleUpdateProblem}>
                       <div className="two-column-grid">
                         <label className="field">
                           <span>Code</span>
                           <input
                             value={editProblemForm.code}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setEditProblemForm((current) => ({
                                 ...current,
                                 code: event.target.value,
-                              }))
-                            }
+                              }));
+                              if (problemEditErrors.length > 0) {
+                                setProblemEditErrors([]);
+                              }
+                            }}
                           />
                         </label>
 
@@ -1436,12 +1606,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           <span>Title</span>
                           <input
                             value={editProblemForm.title}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setEditProblemForm((current) => ({
                                 ...current,
                                 title: event.target.value,
-                              }))
-                            }
+                              }));
+                              if (problemEditErrors.length > 0) {
+                                setProblemEditErrors([]);
+                              }
+                            }}
                           />
                         </label>
                       </div>
@@ -1451,12 +1624,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <textarea
                           rows={6}
                           value={editProblemForm.statement}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setEditProblemForm((current) => ({
                               ...current,
                               statement: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (problemEditErrors.length > 0) {
+                              setProblemEditErrors([]);
+                            }
+                          }}
                         />
                       </label>
 
@@ -1539,12 +1715,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                             type="number"
                             min={100}
                             value={editProblemForm.time_limit_ms}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setEditProblemForm((current) => ({
                                 ...current,
                                 time_limit_ms: event.target.value,
-                              }))
-                            }
+                              }));
+                              if (problemEditErrors.length > 0) {
+                                setProblemEditErrors([]);
+                              }
+                            }}
                           />
                         </label>
 
@@ -1554,12 +1733,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                             type="number"
                             min={16}
                             value={editProblemForm.memory_limit_mb}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setEditProblemForm((current) => ({
                                 ...current,
                                 memory_limit_mb: event.target.value,
-                              }))
-                            }
+                              }));
+                              if (problemEditErrors.length > 0) {
+                                setProblemEditErrors([]);
+                              }
+                            }}
                           />
                         </label>
                       </div>
@@ -1571,12 +1753,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                             type="number"
                             min={1}
                             value={editProblemForm.position}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setEditProblemForm((current) => ({
                                 ...current,
                                 position: event.target.value,
-                              }))
-                            }
+                              }));
+                              if (problemEditErrors.length > 0) {
+                                setProblemEditErrors([]);
+                              }
+                            }}
                           />
                         </label>
 
@@ -1629,12 +1814,18 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
           subtitle="Maintain the selected problem test suite."
         >
           {!selectedProblem ? (
-            <p className="muted">Select a problem first from the Problems tab.</p>
+            <EmptyState
+              title="No problem selected"
+              description="Select a problem first from the Problems tab."
+            />
           ) : (
             <div className="workspace-two-column">
               <div className="list-stack">
                 {testCases.length === 0 ? (
-                  <p className="muted">No test cases for this problem yet.</p>
+                  <EmptyState
+                    title="No test cases yet"
+                    description="Create the first test case for the selected problem."
+                  />
                 ) : (
                   testCases.map((testCase) => (
                     <button
@@ -1667,18 +1858,23 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                   title="Create test case"
                   subtitle={`Problem: ${selectedProblem.code} — ${selectedProblem.title}`}
                 >
+                  <FormErrorList errors={testCaseFormErrors} />
+
                   <form className="form-stack" onSubmit={handleCreateTestCase}>
                     <label className="field">
                       <span>Input data</span>
                       <textarea
                         rows={5}
                         value={createTestCaseForm.input_data}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setCreateTestCaseForm((current) => ({
                             ...current,
                             input_data: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (testCaseFormErrors.length > 0) {
+                            setTestCaseFormErrors([]);
+                          }
+                        }}
                       />
                     </label>
 
@@ -1687,12 +1883,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                       <textarea
                         rows={5}
                         value={createTestCaseForm.expected_output}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setCreateTestCaseForm((current) => ({
                             ...current,
                             expected_output: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (testCaseFormErrors.length > 0) {
+                            setTestCaseFormErrors([]);
+                          }
+                        }}
                       />
                     </label>
 
@@ -1702,12 +1901,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         type="number"
                         min={1}
                         value={createTestCaseForm.position}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setCreateTestCaseForm((current) => ({
                             ...current,
                             position: event.target.value,
-                          }))
-                        }
+                          }));
+                          if (testCaseFormErrors.length > 0) {
+                            setTestCaseFormErrors([]);
+                          }
+                        }}
                       />
                     </label>
 
@@ -1754,18 +1956,23 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                     title="Edit selected test case"
                     subtitle={`Currently selected: #${selectedTestCase.position}`}
                   >
+                    <FormErrorList errors={testCaseEditErrors} />
+
                     <form className="form-stack" onSubmit={handleUpdateTestCase}>
                       <label className="field">
                         <span>Input data</span>
                         <textarea
                           rows={5}
                           value={editTestCaseForm.input_data}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setEditTestCaseForm((current) => ({
                               ...current,
                               input_data: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (testCaseEditErrors.length > 0) {
+                              setTestCaseEditErrors([]);
+                            }
+                          }}
                         />
                       </label>
 
@@ -1774,12 +1981,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                         <textarea
                           rows={5}
                           value={editTestCaseForm.expected_output}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setEditTestCaseForm((current) => ({
                               ...current,
                               expected_output: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (testCaseEditErrors.length > 0) {
+                              setTestCaseEditErrors([]);
+                            }
+                          }}
                         />
                       </label>
 
@@ -1789,12 +1999,15 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
                           type="number"
                           min={1}
                           value={editTestCaseForm.position}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setEditTestCaseForm((current) => ({
                               ...current,
                               position: event.target.value,
-                            }))
-                          }
+                            }));
+                            if (testCaseEditErrors.length > 0) {
+                              setTestCaseEditErrors([]);
+                            }
+                          }}
                         />
                       </label>
 
@@ -1975,10 +2188,13 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               title="Filtered submissions"
               subtitle="Inspect verdicts and trigger rejudge when needed."
             >
-              {submissionsLoading ? <p className="muted">Loading submissions...</p> : null}
+              {submissionsLoading ? <LoadingState label="Loading submissions..." /> : null}
 
               {!submissionsLoading && submissions.length === 0 ? (
-                <p className="muted">No submissions matched the current filters.</p>
+                <EmptyState
+                  title="No submissions found"
+                  description="Try changing filters or clear them to see a broader list."
+                />
               ) : null}
 
               {submissions.length > 0 ? (

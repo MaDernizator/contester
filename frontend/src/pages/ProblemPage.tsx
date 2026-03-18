@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { createSubmission, getProblem, isApiError } from "../api/client";
 import type { Problem, Submission, SubmissionLanguage, User } from "../api/types";
+import { EmptyState } from "../components/EmptyState";
+import { FormErrorList } from "../components/FormErrorList";
+import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
 import { StatusPill } from "../components/StatusPill";
 import {
   getLanguageLabel,
   getSolutionTemplate,
 } from "../features/solving/codeTemplates";
+import { validateSubmissionForm } from "../features/validation/forms";
 
 interface ProblemPageProps {
   user: User | null;
@@ -35,6 +39,7 @@ export function ProblemPage({ user }: ProblemPageProps) {
 
   const [language, setLanguage] = useState<SubmissionLanguage>("python");
   const [sourceCode, setSourceCode] = useState(getSolutionTemplate("python"));
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -92,8 +97,18 @@ export function ProblemPage({ user }: ProblemPageProps) {
       return;
     }
 
-    setSubmitting(true);
+    const errors = validateSubmissionForm({
+      language,
+      sourceCode,
+    });
+    setValidationErrors(errors);
     setSubmissionError(null);
+
+    if (errors.length > 0) {
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
       const submission = await createSubmission({
@@ -112,6 +127,7 @@ export function ProblemPage({ user }: ProblemPageProps) {
 
   function handleApplyTemplate() {
     setSourceCode(getSolutionTemplate(language));
+    setValidationErrors([]);
   }
 
   function handleClearDraft() {
@@ -119,12 +135,16 @@ export function ProblemPage({ user }: ProblemPageProps) {
       window.localStorage.removeItem(draftStorageKey);
     }
     setSourceCode(getSolutionTemplate(language));
+    setValidationErrors([]);
   }
 
   if (!user) {
     return (
       <Panel title="Authentication required">
-        <p className="muted">Please log in first.</p>
+        <EmptyState
+          title="Login required"
+          description="Please log in before opening a problem statement."
+        />
       </Panel>
     );
   }
@@ -132,7 +152,7 @@ export function ProblemPage({ user }: ProblemPageProps) {
   if (loading) {
     return (
       <Panel title="Problem">
-        <p className="muted">Loading problem...</p>
+        <LoadingState label="Loading problem..." />
       </Panel>
     );
   }
@@ -148,7 +168,10 @@ export function ProblemPage({ user }: ProblemPageProps) {
   if (!problem) {
     return (
       <Panel title="Problem">
-        <p className="muted">Problem not found.</p>
+        <EmptyState
+          title="Problem not found"
+          description="The requested problem could not be loaded."
+        />
       </Panel>
     );
   }
@@ -248,9 +271,11 @@ export function ProblemPage({ user }: ProblemPageProps) {
                   <span>Language</span>
                   <select
                     value={language}
-                    onChange={(event) =>
-                      setLanguage(event.target.value as SubmissionLanguage)
-                    }
+                    onChange={(event) => {
+                      setLanguage(event.target.value as SubmissionLanguage);
+                      setValidationErrors([]);
+                      setSubmissionError(null);
+                    }}
                   >
                     {LANGUAGE_OPTIONS.map((item) => (
                       <option key={item} value={item}>
@@ -278,12 +303,19 @@ export function ProblemPage({ user }: ProblemPageProps) {
                 </div>
               </div>
 
+              <FormErrorList errors={validationErrors} />
+
               <label className="field">
                 <span>Source code</span>
                 <textarea
                   rows={20}
                   value={sourceCode}
-                  onChange={(event) => setSourceCode(event.target.value)}
+                  onChange={(event) => {
+                    setSourceCode(event.target.value);
+                    if (validationErrors.length > 0) {
+                      setValidationErrors([]);
+                    }
+                  }}
                   spellCheck={false}
                   className="code-area"
                 />
