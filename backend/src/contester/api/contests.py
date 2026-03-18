@@ -15,30 +15,21 @@ from contester.serializers import (
     serialize_problem_summary,
 )
 
-contest_api = Blueprint("contest_api", __name__, url_prefix="/api/v1/contests")
+contests_blueprint = Blueprint("contests_api", __name__, url_prefix="/api/v1/contests")
 
 
 def _error_response(message: str, status_code: int):
     return jsonify({"error": {"message": message}}), status_code
 
 
-def _can_view_anything() -> bool:
-    return current_user.is_authenticated and current_user.role == UserRole.ADMIN
+def _can_view_unpublished() -> bool:
+    return (
+        current_user.is_authenticated
+        and getattr(current_user, "role", None) == UserRole.ADMIN
+    )
 
 
-def _contest_visibility_clause():
-    if _can_view_anything():
-        return True
-    return Contest.status == ContestStatus.PUBLISHED
-
-
-def _problem_visibility_clause():
-    if _can_view_anything():
-        return True
-    return Problem.status == ProblemStatus.PUBLISHED
-
-
-@contest_api.get("")
+@contests_blueprint.get("")
 @login_required
 def list_contests():
     statement = (
@@ -47,7 +38,7 @@ def list_contests():
         .order_by(Contest.created_at.desc(), Contest.id.desc())
     )
 
-    if not _can_view_anything():
+    if not _can_view_unpublished():
         statement = statement.where(Contest.status == ContestStatus.PUBLISHED)
 
     contests = db.session.execute(statement).scalars().all()
@@ -55,7 +46,7 @@ def list_contests():
     return jsonify({"contests": [serialize_contest(contest) for contest in contests]})
 
 
-@contest_api.get("/<slug>")
+@contests_blueprint.get("/<slug>")
 @login_required
 def get_contest(slug: str):
     statement = (
@@ -64,7 +55,7 @@ def get_contest(slug: str):
         .where(Contest.slug == slug)
     )
 
-    if not _can_view_anything():
+    if not _can_view_unpublished():
         statement = statement.where(Contest.status == ContestStatus.PUBLISHED)
 
     contest = db.session.execute(statement).scalar_one_or_none()
@@ -74,7 +65,7 @@ def get_contest(slug: str):
     return jsonify({"contest": serialize_contest(contest)})
 
 
-@contest_api.get("/<slug>/problems")
+@contests_blueprint.get("/<slug>/problems")
 @login_required
 def list_contest_problems(slug: str):
     contest_statement = (
@@ -83,26 +74,32 @@ def list_contest_problems(slug: str):
         .where(Contest.slug == slug)
     )
 
-    if not _can_view_anything():
-        contest_statement = contest_statement.where(Contest.status == ContestStatus.PUBLISHED)
+    if not _can_view_unpublished():
+        contest_statement = contest_statement.where(
+            Contest.status == ContestStatus.PUBLISHED
+        )
 
     contest = db.session.execute(contest_statement).scalar_one_or_none()
     if contest is None:
         return _error_response("Contest not found.", 404)
 
-    problems = db.session.execute(
-        select(Problem)
-        .where(
-            Problem.contest_id == contest.id,
-            _problem_visibility_clause(),
+    problem_statement = select(Problem).where(Problem.contest_id == contest.id)
+
+    if not _can_view_unpublished():
+        problem_statement = problem_statement.where(
+            Problem.status == ProblemStatus.PUBLISHED
         )
-        .order_by(Problem.position.asc(), Problem.id.asc())
+
+    problems = db.session.execute(
+        problem_statement.order_by(Problem.position.asc(), Problem.id.asc())
     ).scalars().all()
 
-    return jsonify({"problems": [serialize_problem_summary(problem) for problem in problems]})
+    return jsonify(
+        {"problems": [serialize_problem_summary(problem) for problem in problems]}
+    )
 
 
-@contest_api.get("/<slug>/problems/<problem_code>")
+@contests_blueprint.get("/<slug>/problems/<problem_code>")
 @login_required
 def get_contest_problem(slug: str, problem_code: str):
     contest_statement = (
@@ -111,23 +108,30 @@ def get_contest_problem(slug: str, problem_code: str):
         .where(Contest.slug == slug)
     )
 
-    if not _can_view_anything():
-        contest_statement = contest_statement.where(Contest.status == ContestStatus.PUBLISHED)
+    if not _can_view_unpublished():
+        contest_statement = contest_statement.where(
+            Contest.status == ContestStatus.PUBLISHED
+        )
 
     contest = db.session.execute(contest_statement).scalar_one_or_none()
     if contest is None:
         return _error_response("Contest not found.", 404)
 
-    problem = db.session.execute(
+    problem_statement = (
         select(Problem)
         .options(selectinload(Problem.contest))
         .where(
             Problem.contest_id == contest.id,
             Problem.code == problem_code,
-            _problem_visibility_clause(),
         )
-    ).scalar_one_or_none()
+    )
 
+    if not _can_view_unpublished():
+        problem_statement = problem_statement.where(
+            Problem.status == ProblemStatus.PUBLISHED
+        )
+
+    problem = db.session.execute(problem_statement).scalar_one_or_none()
     if problem is None:
         return _error_response("Problem not found.", 404)
 
