@@ -29,7 +29,7 @@ from contester.services.positioning import (
     move_test_case_to_position,
 )
 
-admin_api = Blueprint("admin_api", __name__, url_prefix="/api/v1/admin")
+admin_blueprint = Blueprint("admin_api", __name__, url_prefix="/api/v1/admin")
 
 
 def _error_response(message: str, status_code: int):
@@ -78,7 +78,7 @@ def _get_submission_or_404(submission_id: str) -> Submission | None:
     return db.session.get(Submission, parsed)
 
 
-@admin_api.get("/contests")
+@admin_blueprint.get("/contests")
 @login_required
 @admin_required
 def list_admin_contests():
@@ -91,7 +91,7 @@ def list_admin_contests():
     return jsonify({"contests": [serialize_contest(contest) for contest in contests]})
 
 
-@admin_api.post("/contests")
+@admin_blueprint.post("/contests")
 @login_required
 @admin_required
 def create_admin_contest():
@@ -128,7 +128,7 @@ def create_admin_contest():
     return jsonify({"contest": serialize_contest(contest)}), 201
 
 
-@admin_api.patch("/contests/<contest_id>")
+@admin_blueprint.patch("/contests/<contest_id>")
 @login_required
 @admin_required
 def update_admin_contest(contest_id: str):
@@ -166,7 +166,7 @@ def update_admin_contest(contest_id: str):
     return jsonify({"contest": serialize_contest(contest)})
 
 
-@admin_api.get("/contests/<contest_id>/problems")
+@admin_blueprint.get("/contests/<contest_id>/problems")
 @login_required
 @admin_required
 def list_admin_problems(contest_id: str):
@@ -183,7 +183,7 @@ def list_admin_problems(contest_id: str):
     return jsonify({"problems": [serialize_problem_summary(problem) for problem in problems]})
 
 
-@admin_api.post("/contests/<contest_id>/problems")
+@admin_blueprint.post("/contests/<contest_id>/problems")
 @login_required
 @admin_required
 def create_admin_problem(contest_id: str):
@@ -242,14 +242,18 @@ def create_admin_problem(contest_id: str):
     return jsonify({"problem": serialize_problem(problem)}), 201
 
 
-@admin_api.get("/problems/<problem_id>")
+@admin_blueprint.get("/problems/<problem_id>")
 @login_required
 @admin_required
 def get_admin_problem(problem_id: str):
+    parsed_problem_id = _parse_uuid(problem_id)
+    if parsed_problem_id is None:
+        return _error_response("Problem not found.", 404)
+
     problem = db.session.execute(
         select(Problem)
         .options(selectinload(Problem.contest))
-        .where(Problem.id == _parse_uuid(problem_id))
+        .where(Problem.id == parsed_problem_id)
     ).scalar_one_or_none()
 
     if problem is None:
@@ -258,14 +262,18 @@ def get_admin_problem(problem_id: str):
     return jsonify({"problem": serialize_problem(problem)})
 
 
-@admin_api.patch("/problems/<problem_id>")
+@admin_blueprint.patch("/problems/<problem_id>")
 @login_required
 @admin_required
 def update_admin_problem(problem_id: str):
+    parsed_problem_id = _parse_uuid(problem_id)
+    if parsed_problem_id is None:
+        return _error_response("Problem not found.", 404)
+
     problem = db.session.execute(
         select(Problem)
         .options(selectinload(Problem.contest))
-        .where(Problem.id == _parse_uuid(problem_id))
+        .where(Problem.id == parsed_problem_id)
     ).scalar_one_or_none()
 
     if problem is None:
@@ -316,7 +324,7 @@ def update_admin_problem(problem_id: str):
     return jsonify({"problem": serialize_problem(problem)})
 
 
-@admin_api.get("/problems/<problem_id>/test-cases")
+@admin_blueprint.get("/problems/<problem_id>/test-cases")
 @login_required
 @admin_required
 def list_admin_test_cases(problem_id: str):
@@ -335,7 +343,7 @@ def list_admin_test_cases(problem_id: str):
     )
 
 
-@admin_api.post("/problems/<problem_id>/test-cases")
+@admin_blueprint.post("/problems/<problem_id>/test-cases")
 @login_required
 @admin_required
 def create_admin_test_case(problem_id: str):
@@ -369,7 +377,7 @@ def create_admin_test_case(problem_id: str):
     return jsonify({"test_case": serialize_test_case(test_case)}), 201
 
 
-@admin_api.get("/test-cases/<test_case_id>")
+@admin_blueprint.get("/test-cases/<test_case_id>")
 @login_required
 @admin_required
 def get_admin_test_case(test_case_id: str):
@@ -380,7 +388,7 @@ def get_admin_test_case(test_case_id: str):
     return jsonify({"test_case": serialize_test_case(test_case)})
 
 
-@admin_api.patch("/test-cases/<test_case_id>")
+@admin_blueprint.patch("/test-cases/<test_case_id>")
 @login_required
 @admin_required
 def update_admin_test_case(test_case_id: str):
@@ -409,7 +417,7 @@ def update_admin_test_case(test_case_id: str):
     return jsonify({"test_case": serialize_test_case(test_case)})
 
 
-@admin_api.get("/submissions/queue")
+@admin_blueprint.get("/submissions/queue")
 @login_required
 @admin_required
 def get_admin_submission_queue():
@@ -449,7 +457,7 @@ def get_admin_submission_queue():
     )
 
 
-@admin_api.get("/submissions")
+@admin_blueprint.get("/submissions")
 @login_required
 @admin_required
 def list_admin_submissions():
@@ -476,7 +484,9 @@ def list_admin_submissions():
     if problem_code:
         statement = statement.where(Problem.code == problem_code)
     if username:
-        statement = statement.where(current_user.__class__.username == username)
+        from contester.models.user import User
+
+        statement = statement.where(User.username == username)
     if language:
         statement = statement.where(Submission.language == language)
     if status:
@@ -485,10 +495,7 @@ def list_admin_submissions():
         except ValueError:
             return _error_response("Invalid submission status filter.", 400)
     if verdict:
-        try:
-            statement = statement.where(Submission.verdict == verdict)
-        except ValueError:
-            return _error_response("Invalid submission verdict filter.", 400)
+        statement = statement.where(Submission.verdict == verdict)
 
     submissions = db.session.execute(
         statement.order_by(Submission.created_at.desc(), Submission.id.desc())
@@ -499,17 +506,21 @@ def list_admin_submissions():
     )
 
 
-@admin_api.post("/submissions/<submission_id>/rejudge")
+@admin_blueprint.post("/submissions/<submission_id>/rejudge")
 @login_required
 @admin_required
 def rejudge_admin_submission(submission_id: str):
+    parsed_submission_id = _parse_uuid(submission_id)
+    if parsed_submission_id is None:
+        return _error_response("Submission not found.", 404)
+
     submission = db.session.execute(
         select(Submission)
         .options(
             selectinload(Submission.user),
             selectinload(Submission.problem).selectinload(Problem.contest),
         )
-        .where(Submission.id == _parse_uuid(submission_id))
+        .where(Submission.id == parsed_submission_id)
     ).scalar_one_or_none()
 
     if submission is None:
