@@ -40,7 +40,7 @@ def list_published_problems(contest_slug: str):
             Problem.contest_id == contest.id,
             Problem.status == ProblemStatus.PUBLISHED,
         )
-        .order_by(Problem.position.asc(), Problem.created_at.asc())
+        .order_by(Problem.position.asc(), Problem.id.asc())
     )
     problems = db.session.execute(statement).scalars().all()
 

@@ -96,7 +96,7 @@ class JudgeService:
                 TestCase.problem_id == submission.problem_id,
                 TestCase.is_active.is_(True),
             )
-            .order_by(TestCase.position.asc(), TestCase.created_at.asc())
+            .order_by(TestCase.position.asc(), TestCase.id.asc())
         ).scalars().all()
 
         submission.mark_running(total_test_count=len(test_cases))

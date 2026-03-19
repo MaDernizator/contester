@@ -21,6 +21,10 @@ from contester.request_validation import (
     read_required_string,
 )
 from contester.serializers import serialize_test_case, serialize_test_case_summary
+from contester.services.positioning import (
+    assign_test_case_insert_position,
+    move_test_case_to_position,
+)
 
 admin_test_cases_blueprint = Blueprint("admin_test_cases", __name__)
 
@@ -50,63 +54,6 @@ def _get_test_case_count(problem_id: UUID) -> int:
     return int(db.session.scalar(statement) or 0)
 
 
-def _shift_positions_for_insert(*, problem_id: UUID, from_position: int) -> None:
-    statement = (
-        select(TestCase)
-        .where(
-            TestCase.problem_id == problem_id,
-            TestCase.position >= from_position,
-        )
-        .order_by(TestCase.position.desc(), TestCase.created_at.desc())
-    )
-    test_cases = db.session.execute(statement).scalars().all()
-
-    for test_case in test_cases:
-        test_case.position += 1
-
-
-def _reorder_test_case(
-    *,
-    problem_id: UUID,
-    test_case: TestCase,
-    new_position: int,
-) -> None:
-    old_position = test_case.position
-    if new_position == old_position:
-        return
-
-    if new_position < old_position:
-        statement = (
-            select(TestCase)
-            .where(
-                TestCase.problem_id == problem_id,
-                TestCase.id != test_case.id,
-                TestCase.position >= new_position,
-                TestCase.position < old_position,
-            )
-            .order_by(TestCase.position.desc(), TestCase.created_at.desc())
-        )
-        affected = db.session.execute(statement).scalars().all()
-        for other in affected:
-            other.position += 1
-    else:
-        statement = (
-            select(TestCase)
-            .where(
-                TestCase.problem_id == problem_id,
-                TestCase.id != test_case.id,
-                TestCase.position > old_position,
-                TestCase.position <= new_position,
-            )
-            .order_by(TestCase.position.asc(), TestCase.created_at.asc())
-        )
-        affected = db.session.execute(statement).scalars().all()
-        for other in affected:
-            other.position -= 1
-
-    test_case.position = new_position
-
-
 @admin_test_cases_blueprint.get("/admin/problems/<uuid:problem_id>/test-cases")
 @admin_required
 def list_admin_test_cases(problem_id: UUID):
@@ -115,7 +62,7 @@ def list_admin_test_cases(problem_id: UUID):
     statement = (
         select(TestCase)
         .where(TestCase.problem_id == problem_id)
-        .order_by(TestCase.position.asc(), TestCase.created_at.asc())
+        .order_by(TestCase.position.asc(), TestCase.id.asc())
     )
     test_cases = db.session.execute(statement).scalars().all()
 
@@ -135,18 +82,16 @@ def create_test_case(problem_id: UUID):
     requested_position = read_optional_int(payload, "position", min_value=1)
 
     test_case_count = _get_test_case_count(problem.id)
-    if requested_position is None:
-        position = test_case_count + 1
-    else:
-        if requested_position > test_case_count + 1:
-            raise BadRequest(
-                f"Field 'position' must be less than or equal to {test_case_count + 1}."
-            )
-        position = requested_position
+    if requested_position is not None and requested_position > test_case_count + 1:
+        raise BadRequest(
+            f"Field 'position' must be less than or equal to {test_case_count + 1}."
+        )
 
     try:
-        if position <= test_case_count:
-            _shift_positions_for_insert(problem_id=problem.id, from_position=position)
+        position = assign_test_case_insert_position(
+            problem_id=problem.id,
+            requested_position=requested_position,
+        )
 
         test_case = TestCase.create(
             problem=problem,
@@ -206,10 +151,9 @@ def update_admin_test_case(test_case_id: UUID):
             max_position = _get_test_case_count(problem_id)
             if new_position > max_position:
                 raise BadRequest(f"Field 'position' must be less than or equal to {max_position}.")
-            _reorder_test_case(
-                problem_id=problem_id,
+            move_test_case_to_position(
                 test_case=test_case,
-                new_position=new_position,
+                requested_position=new_position,
             )
 
         db.session.commit()

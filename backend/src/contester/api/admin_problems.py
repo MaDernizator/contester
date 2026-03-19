@@ -21,6 +21,10 @@ from contester.request_validation import (
     read_required_string,
 )
 from contester.serializers import serialize_problem, serialize_problem_summary
+from contester.services.positioning import (
+    assign_problem_insert_position,
+    move_problem_to_position,
+)
 
 admin_problems_blueprint = Blueprint("admin_problems", __name__)
 
@@ -71,69 +75,6 @@ def _get_problem_count(contest_id: UUID) -> int:
     return int(db.session.scalar(statement) or 0)
 
 
-def _get_next_position(contest_id: UUID) -> int:
-    statement = select(func.max(Problem.position)).where(Problem.contest_id == contest_id)
-    current_max = db.session.scalar(statement)
-    return int(current_max or 0) + 1
-
-
-def _shift_positions_for_insert(*, contest_id: UUID, from_position: int) -> None:
-    statement = (
-        select(Problem)
-        .where(
-            Problem.contest_id == contest_id,
-            Problem.position >= from_position,
-        )
-        .order_by(Problem.position.desc(), Problem.created_at.desc())
-    )
-    problems_to_shift = db.session.execute(statement).scalars().all()
-
-    for problem in problems_to_shift:
-        problem.position += 1
-
-
-def _reorder_problem(
-    *,
-    contest_id: UUID,
-    problem: Problem,
-    new_position: int,
-) -> None:
-    old_position = problem.position
-    if new_position == old_position:
-        return
-
-    if new_position < old_position:
-        statement = (
-            select(Problem)
-            .where(
-                Problem.contest_id == contest_id,
-                Problem.id != problem.id,
-                Problem.position >= new_position,
-                Problem.position < old_position,
-            )
-            .order_by(Problem.position.desc(), Problem.created_at.desc())
-        )
-        affected = db.session.execute(statement).scalars().all()
-        for other in affected:
-            other.position += 1
-    else:
-        statement = (
-            select(Problem)
-            .where(
-                Problem.contest_id == contest_id,
-                Problem.id != problem.id,
-                Problem.position > old_position,
-                Problem.position <= new_position,
-            )
-            .order_by(Problem.position.asc(), Problem.created_at.asc())
-        )
-        affected = db.session.execute(statement).scalars().all()
-        for other in affected:
-            other.position -= 1
-
-    problem.position = new_position
-
-
 @admin_problems_blueprint.get("/admin/contests/<uuid:contest_id>/problems")
 @admin_required
 def list_admin_problems(contest_id: UUID):
@@ -143,7 +84,7 @@ def list_admin_problems(contest_id: UUID):
         select(Problem)
         .options(selectinload(Problem.contest))
         .where(Problem.contest_id == contest_id)
-        .order_by(Problem.position.asc(), Problem.created_at.asc())
+        .order_by(Problem.position.asc(), Problem.id.asc())
     )
     problems = db.session.execute(statement).scalars().all()
 
@@ -185,18 +126,16 @@ def create_problem(contest_id: UUID):
         raise Conflict("Problem code already exists in this contest.")
 
     problem_count = _get_problem_count(contest.id)
-    if requested_position is None:
-        position = problem_count + 1
-    else:
-        if requested_position > problem_count + 1:
-            raise BadRequest(
-                f"Field 'position' must be less than or equal to {problem_count + 1}."
-            )
-        position = requested_position
+    if requested_position is not None and requested_position > problem_count + 1:
+        raise BadRequest(
+            f"Field 'position' must be less than or equal to {problem_count + 1}."
+        )
 
     try:
-        if position <= problem_count:
-            _shift_positions_for_insert(contest_id=contest.id, from_position=position)
+        position = assign_problem_insert_position(
+            contest_id=contest.id,
+            requested_position=requested_position,
+        )
 
         problem = Problem.create(
             contest=contest,
@@ -294,10 +233,9 @@ def update_admin_problem(problem_id: UUID):
             max_position = _get_problem_count(contest_id)
             if new_position > max_position:
                 raise BadRequest(f"Field 'position' must be less than or equal to {max_position}.")
-            _reorder_problem(
-                contest_id=contest_id,
+            move_problem_to_position(
                 problem=problem,
-                new_position=new_position,
+                requested_position=new_position,
             )
 
         db.session.commit()
