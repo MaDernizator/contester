@@ -9,6 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
+from contester.services.positioning import (
+    assign_problem_insert_position,
+    assign_test_case_insert_position,
+    move_problem_to_position,
+    move_test_case_to_position,
+)
+
 from contester.auth import admin_required
 from contester.extensions import db
 from contester.models.contest import Contest
@@ -145,7 +152,11 @@ def list_admin_problems(contest_id: UUID):
         .where(Problem.contest_id == contest_id)
         .order_by(Problem.position.asc(), Problem.created_at.asc())
     )
-    problems = db.session.execute(statement).scalars().all()
+    problems = db.session.execute(
+        select(Problem)
+        .where(Problem.contest_id == contest_id)
+        .order_by(Problem.position.asc(), Problem.id.asc())
+    ).scalars().all()
 
     return (
         jsonify({"problems": [serialize_problem_summary(problem) for problem in problems]}),
@@ -198,6 +209,11 @@ def create_problem(contest_id: UUID):
         if position <= problem_count:
             _shift_positions_for_insert(contest_id=contest.id, from_position=position)
 
+        assigned_position = assign_problem_insert_position(
+            contest_id=contest.id,
+            requested_position=payload.get("position"),
+        )
+
         problem = Problem.create(
             contest=contest,
             code=normalized_code,
@@ -210,7 +226,7 @@ def create_problem(contest_id: UUID):
             sample_output=sample_output,
             time_limit_ms=time_limit_ms,
             memory_limit_mb=memory_limit_mb,
-            position=position,
+            position=assigned_position,
             status=status,
         )
         db.session.add(problem)
