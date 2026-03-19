@@ -43,14 +43,16 @@ def _truncate_text(value: str, max_length: int = 4000) -> str:
 
 class JudgeService:
     def __init__(
-        self,
-        workspace_root: Path,
-        *,
-        execution_backend: str = "local",
-        docker_binary: str = "docker",
-        docker_image: str = "contester-judge:local",
-        cxx_compiler: str = "g++",
-        cpp_compile_timeout_sec: int = 15,
+            self,
+            workspace_root: Path,
+            *,
+            execution_backend: str = "local",
+            docker_binary: str = "docker",
+            docker_image: str = "contester-judge:local",
+            docker_shared_volume: str | None = None,
+            docker_shared_mount_path: str | None = None,
+            cxx_compiler: str = "g++",
+            cpp_compile_timeout_sec: int = 15,
     ) -> None:
         self.workspace_root = Path(workspace_root)
         self.execution_backend = execution_backend
@@ -64,11 +66,20 @@ class JudgeService:
         self.docker_runner: DockerRunner | None = None
 
         if self.execution_backend == "docker":
+            shared_volume_name = docker_shared_volume or current_app.config.get(
+                "JUDGE_DOCKER_SHARED_VOLUME",
+                "contester_judge_workspace",
+            )
+            shared_mount_path = docker_shared_mount_path or current_app.config.get(
+                "JUDGE_DOCKER_SHARED_MOUNT_PATH",
+                "/judge-shared",
+            )
+
             self.docker_runner = DockerRunner(
                 image=self.docker_image,
                 docker_binary=self.docker_binary,
-                shared_volume_name=current_app.config["JUDGE_DOCKER_SHARED_VOLUME"],
-                shared_mount_path=current_app.config["JUDGE_DOCKER_SHARED_MOUNT_PATH"],
+                shared_volume_name=shared_volume_name,
+                shared_mount_path=shared_mount_path,
             )
 
     def judge_submission(self, submission_id) -> Submission:

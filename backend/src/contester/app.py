@@ -31,6 +31,11 @@ def create_app(environment: str | None = None) -> Flask:
     import contester.models  # noqa: F401
 
     register_blueprints(app)
+
+    @app.route("/api/v1/<path:_unknown_path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    def api_not_found(_unknown_path: str):
+        return {"error": {"message": "Resource not found."}}, 404
+
     register_error_handlers(app)
     register_commands(app)
 

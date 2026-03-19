@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from contester.models.user import UserRole
+from contester.serializers import serialize_user
+
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 from sqlalchemy import func, select
@@ -76,6 +79,15 @@ def _get_submission_or_404(submission_id: str) -> Submission | None:
     if parsed is None:
         return None
     return db.session.get(Submission, parsed)
+
+
+@admin_blueprint.get("/session")
+@login_required
+def get_admin_session():
+    if getattr(current_user, "role", None) != UserRole.ADMIN:
+        return _error_response("Admin access required.", 403)
+
+    return jsonify({"user": serialize_user(current_user)})
 
 
 @admin_blueprint.get("/contests")

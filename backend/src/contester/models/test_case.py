@@ -42,9 +42,15 @@ class TestCase(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
     @staticmethod
     def normalize_required_text(value: str, field_name: str) -> str:
         normalized = value.replace("\r\n", "\n").replace("\r", "\n")
-        if not normalized.strip():
-            raise ValueError(f"{field_name} must not be empty.")
+        if value is None:
+            raise ValueError(f"{field_name} must not be null.")
         return normalized
+
+    @staticmethod
+    def normalize_optional_empty_text(value: str, field_name: str) -> str:
+        if value is None:
+            raise ValueError(f"{field_name} must not be null.")
+        return value.replace("\r\n", "\n").replace("\r", "\n")
 
     @staticmethod
     def validate_position(position: int) -> None:
@@ -67,8 +73,8 @@ class TestCase(UUIDPrimaryKeyMixin, TimestampMixin, db.Model):
         return cls(
             problem=problem,
             position=position,
-            input_data=cls.normalize_required_text(input_data, "Input data"),
-            expected_output=cls.normalize_required_text(expected_output, "Expected output"),
+            input_data=cls.normalize_optional_empty_text(input_data, "Input data"),
+            expected_output=cls.normalize_optional_empty_text(expected_output, "Expected output"),
             is_sample=is_sample,
             is_active=is_active,
         )

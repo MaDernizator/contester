@@ -15,7 +15,11 @@ from contester.serializers import (
     serialize_problem_summary,
 )
 
-contests_blueprint = Blueprint("contests_api", __name__, url_prefix="/api/v1/contests")
+contests_blueprint = Blueprint(
+    "contests_api",
+    __name__,
+    url_prefix="/api/v1/contests",
+)
 
 
 def _error_response(message: str, status_code: int):
@@ -29,7 +33,7 @@ def _can_view_unpublished() -> bool:
     )
 
 
-@contests_blueprint.get("")
+@contests_blueprint.route("", methods=["GET"])
 @login_required
 def list_contests():
     statement = (
@@ -46,7 +50,7 @@ def list_contests():
     return jsonify({"contests": [serialize_contest(contest) for contest in contests]})
 
 
-@contests_blueprint.get("/<slug>")
+@contests_blueprint.route("/<slug>", methods=["GET"])
 @login_required
 def get_contest(slug: str):
     statement = (
@@ -65,7 +69,7 @@ def get_contest(slug: str):
     return jsonify({"contest": serialize_contest(contest)})
 
 
-@contests_blueprint.get("/<slug>/problems")
+@contests_blueprint.route("/<slug>/problems", methods=["GET"])
 @login_required
 def list_contest_problems(slug: str):
     contest_statement = (
@@ -99,7 +103,7 @@ def list_contest_problems(slug: str):
     )
 
 
-@contests_blueprint.get("/<slug>/problems/<problem_code>")
+@contests_blueprint.route("/<slug>/problems/<problem_code>", methods=["GET"])
 @login_required
 def get_contest_problem(slug: str, problem_code: str):
     contest_statement = (
