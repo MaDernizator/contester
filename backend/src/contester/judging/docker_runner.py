@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import stat
 import subprocess
 import time
@@ -18,6 +19,9 @@ from contester.judging.python_runner import (
     PythonExecutionStatus,
 )
 
+_TIME_MARKER_PREFIX = "__CONTESTER_EXEC_TIME_SECONDS__:"
+_DOCKER_STARTUP_GRACE_SEC = 2.0
+
 
 def _timeout_stream_to_text(value: str | bytes | None) -> str:
     if value is None:
@@ -25,6 +29,25 @@ def _timeout_stream_to_text(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _extract_measured_time_ms(stderr: str, fallback_ms: int) -> tuple[str, int]:
+    measured_ms: int | None = None
+    cleaned_lines: list[str] = []
+
+    for line in stderr.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if line.startswith(_TIME_MARKER_PREFIX):
+            raw_value = line.removeprefix(_TIME_MARKER_PREFIX).strip()
+            try:
+                measured_ms = max(int(float(raw_value) * 1000), 0)
+                continue
+            except ValueError:
+                pass
+
+        cleaned_lines.append(line)
+
+    cleaned_stderr = "\n".join(cleaned_lines).strip("\n")
+    return cleaned_stderr, measured_ms if measured_ms is not None else fallback_ms
 
 
 class DockerRunner:
@@ -57,15 +80,23 @@ class DockerRunner:
 
         container_workspace_dir = self._container_workspace_dir(workspace_dir)
         container_name = self._make_container_name("python")
+        timed_command = self._build_timed_shell_command(
+            [
+                "python3",
+                "-I",
+                str(container_workspace_dir / "solution.py"),
+            ]
+        )
+
         command = self._build_docker_run_command(
             container_workspace_dir=container_workspace_dir,
             container_name=container_name,
             memory_limit_mb=max(memory_limit_mb, 128),
         ) + [
             self.image,
-            "python3",
-            "-I",
-            str(container_workspace_dir / "solution.py"),
+            "sh",
+            "-lc",
+            timed_command,
         ]
 
         started_at = time.monotonic()
@@ -73,12 +104,15 @@ class DockerRunner:
         try:
             completed = self._run_command(
                 command=command,
-                timeout_sec=time_limit_ms / 1000,
+                timeout_sec=(time_limit_ms / 1000) + _DOCKER_STARTUP_GRACE_SEC,
                 input_data=input_data,
                 container_name=container_name,
             )
         except subprocess.TimeoutExpired as error:
-            execution_time_ms = max(int((time.monotonic() - started_at) * 1000), time_limit_ms)
+            execution_time_ms = max(
+                int((time.monotonic() - started_at) * 1000),
+                time_limit_ms,
+            )
             return PythonExecutionResult(
                 status=PythonExecutionStatus.TIME_LIMIT_EXCEEDED,
                 execution_time_ms=execution_time_ms,
@@ -86,24 +120,28 @@ class DockerRunner:
                 stderr=_timeout_stream_to_text(error.stderr),
             )
 
-        execution_time_ms = int((time.monotonic() - started_at) * 1000)
+        wall_clock_ms = int((time.monotonic() - started_at) * 1000)
+        cleaned_stderr, measured_time_ms = _extract_measured_time_ms(
+            completed.stderr,
+            wall_clock_ms,
+        )
 
         if completed.returncode == 125:
-            raise RuntimeError(completed.stderr.strip() or "Docker execution failed.")
+            raise RuntimeError(cleaned_stderr.strip() or "Docker execution failed.")
 
         if completed.returncode != 0:
             return PythonExecutionResult(
                 status=PythonExecutionStatus.RUNTIME_ERROR,
-                execution_time_ms=execution_time_ms,
+                execution_time_ms=measured_time_ms,
                 stdout=completed.stdout,
-                stderr=completed.stderr,
+                stderr=cleaned_stderr,
             )
 
         return PythonExecutionResult(
             status=PythonExecutionStatus.SUCCESS,
-            execution_time_ms=execution_time_ms,
+            execution_time_ms=measured_time_ms,
             stdout=completed.stdout,
-            stderr=completed.stderr,
+            stderr=cleaned_stderr,
         )
 
     def compile_cpp(
@@ -124,18 +162,26 @@ class DockerRunner:
 
         container_workspace_dir = self._container_workspace_dir(workspace_dir)
         container_name = self._make_container_name("cpp-compile")
+        timed_command = self._build_timed_shell_command(
+            [
+                compiler,
+                "-std=c++17",
+                "-O2",
+                "-o",
+                str(container_workspace_dir / "solution"),
+                str(container_workspace_dir / "solution.cpp"),
+            ]
+        )
+
         command = self._build_docker_run_command(
             container_workspace_dir=container_workspace_dir,
             container_name=container_name,
             memory_limit_mb=max(memory_limit_mb * 2, 256),
         ) + [
             self.image,
-            compiler,
-            "-std=c++17",
-            "-O2",
-            "-o",
-            str(container_workspace_dir / "solution"),
-            str(container_workspace_dir / "solution.cpp"),
+            "sh",
+            "-lc",
+            timed_command,
         ]
 
         started_at = time.monotonic()
@@ -143,7 +189,7 @@ class DockerRunner:
         try:
             completed = self._run_command(
                 command=command,
-                timeout_sec=timeout_sec,
+                timeout_sec=timeout_sec + _DOCKER_STARTUP_GRACE_SEC,
                 input_data=None,
                 container_name=container_name,
             )
@@ -157,30 +203,34 @@ class DockerRunner:
                 binary_path=None,
             )
 
-        compile_time_ms = int((time.monotonic() - started_at) * 1000)
+        wall_clock_ms = int((time.monotonic() - started_at) * 1000)
+        cleaned_stderr, measured_time_ms = _extract_measured_time_ms(
+            completed.stderr,
+            wall_clock_ms,
+        )
 
         if completed.returncode == 125:
             return CppCompilationResult(
                 status=CppCompilationStatus.INTERNAL_ERROR,
-                compile_time_ms=compile_time_ms,
+                compile_time_ms=measured_time_ms,
                 stdout=completed.stdout,
-                stderr=completed.stderr,
+                stderr=cleaned_stderr,
                 binary_path=None,
             )
 
         if completed.returncode != 0:
             return CppCompilationResult(
                 status=CppCompilationStatus.COMPILATION_ERROR,
-                compile_time_ms=compile_time_ms,
+                compile_time_ms=measured_time_ms,
                 stdout=completed.stdout,
-                stderr=completed.stderr,
+                stderr=cleaned_stderr,
                 binary_path=None,
             )
 
         if not binary_path.exists():
             return CppCompilationResult(
                 status=CppCompilationStatus.INTERNAL_ERROR,
-                compile_time_ms=compile_time_ms,
+                compile_time_ms=measured_time_ms,
                 stdout=completed.stdout,
                 stderr="Compilation succeeded but output binary was not found.",
                 binary_path=None,
@@ -188,9 +238,9 @@ class DockerRunner:
 
         return CppCompilationResult(
             status=CppCompilationStatus.SUCCESS,
-            compile_time_ms=compile_time_ms,
+            compile_time_ms=measured_time_ms,
             stdout=completed.stdout,
-            stderr=completed.stderr,
+            stderr=cleaned_stderr,
             binary_path=binary_path,
         )
 
@@ -207,13 +257,21 @@ class DockerRunner:
 
         container_workspace_dir = self._container_workspace_dir(workspace_dir)
         container_name = self._make_container_name("cpp-run")
+        timed_command = self._build_timed_shell_command(
+            [
+                str(container_workspace_dir / binary_path.name),
+            ]
+        )
+
         command = self._build_docker_run_command(
             container_workspace_dir=container_workspace_dir,
             container_name=container_name,
             memory_limit_mb=max(memory_limit_mb, 128),
         ) + [
             self.image,
-            str(container_workspace_dir / binary_path.name),
+            "sh",
+            "-lc",
+            timed_command,
         ]
 
         started_at = time.monotonic()
@@ -221,12 +279,15 @@ class DockerRunner:
         try:
             completed = self._run_command(
                 command=command,
-                timeout_sec=time_limit_ms / 1000,
+                timeout_sec=(time_limit_ms / 1000) + _DOCKER_STARTUP_GRACE_SEC,
                 input_data=input_data,
                 container_name=container_name,
             )
         except subprocess.TimeoutExpired as error:
-            execution_time_ms = max(int((time.monotonic() - started_at) * 1000), time_limit_ms)
+            execution_time_ms = max(
+                int((time.monotonic() - started_at) * 1000),
+                time_limit_ms,
+            )
             return CppExecutionResult(
                 status=CppExecutionStatus.TIME_LIMIT_EXCEEDED,
                 execution_time_ms=execution_time_ms,
@@ -234,24 +295,28 @@ class DockerRunner:
                 stderr=_timeout_stream_to_text(error.stderr),
             )
 
-        execution_time_ms = int((time.monotonic() - started_at) * 1000)
+        wall_clock_ms = int((time.monotonic() - started_at) * 1000)
+        cleaned_stderr, measured_time_ms = _extract_measured_time_ms(
+            completed.stderr,
+            wall_clock_ms,
+        )
 
         if completed.returncode == 125:
-            raise RuntimeError(completed.stderr.strip() or "Docker execution failed.")
+            raise RuntimeError(cleaned_stderr.strip() or "Docker execution failed.")
 
         if completed.returncode != 0:
             return CppExecutionResult(
                 status=CppExecutionStatus.RUNTIME_ERROR,
-                execution_time_ms=execution_time_ms,
+                execution_time_ms=measured_time_ms,
                 stdout=completed.stdout,
-                stderr=completed.stderr,
+                stderr=cleaned_stderr,
             )
 
         return CppExecutionResult(
             status=CppExecutionStatus.SUCCESS,
-            execution_time_ms=execution_time_ms,
+            execution_time_ms=measured_time_ms,
             stdout=completed.stdout,
-            stderr=completed.stderr,
+            stderr=cleaned_stderr,
         )
 
     def _build_docker_run_command(
@@ -309,6 +374,11 @@ class DockerRunner:
             ) from error
 
         return self.shared_mount_path / relative_workspace_dir
+
+    def _build_timed_shell_command(self, program: list[str]) -> str:
+        quoted_program = " ".join(shlex.quote(part) for part in program)
+        quoted_format = shlex.quote(f"{_TIME_MARKER_PREFIX}%e")
+        return f"/usr/bin/time -f {quoted_format} {quoted_program}"
 
     def _run_command(
         self,

@@ -14,7 +14,12 @@ def test_execute_python_builds_expected_isolated_docker_command(tmp_path, monkey
     def fake_run(command, **kwargs):
         captured_commands.append(command)
         captured_inputs.append(kwargs.get("input"))
-        return subprocess.CompletedProcess(command, 0, stdout="3\n", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="3\n",
+            stderr="__CONTESTER_EXEC_TIME_SECONDS__:0.02\n",
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -36,9 +41,13 @@ def test_execute_python_builds_expected_isolated_docker_command(tmp_path, monkey
     )
 
     assert result.status == PythonExecutionStatus.SUCCESS
+    assert result.execution_time_ms == 20
+    assert result.stderr == ""
     assert (workspace_dir / "solution.py").read_text(encoding="utf-8") == "print(input())\n"
 
     command = captured_commands[0]
+    joined_command = " ".join(command)
+
     assert command[:2] == ["docker", "run"]
     assert "--network" in command
     assert "none" in command
@@ -49,9 +58,10 @@ def test_execute_python_builds_expected_isolated_docker_command(tmp_path, monkey
     assert "-v" in command
     assert f"contester_judge_workspace:{shared_mount_path}:rw" in command
     assert "contester-judge:local" in command
-    assert "python3" in command
-    assert str(shared_mount_path / "job-1") in command
-    assert str(shared_mount_path / "job-1" / "solution.py") in command
+    assert "sh -lc" in joined_command
+    assert "/usr/bin/time -f" in joined_command
+    assert "python3 -I" in joined_command
+    assert str(shared_mount_path / "job-1" / "solution.py") in joined_command
     assert captured_inputs[0] == "3\n"
 
 
@@ -96,13 +106,16 @@ def test_execute_python_timeout_forces_container_cleanup(tmp_path, monkeypatch) 
     )
 
 
-def test_compile_cpp_returns_compilation_error_on_nonzero_exit(tmp_path, monkeypatch) -> None:
+def test_compile_cpp_returns_compilation_error_on_nonzero_exit_and_strips_timing_marker(
+    tmp_path,
+    monkeypatch,
+) -> None:
     def fake_run(command, **kwargs):
         return subprocess.CompletedProcess(
             command,
             1,
             stdout="",
-            stderr="error: expected ';' before 'return'",
+            stderr="error: expected ';' before 'return'\n__CONTESTER_EXEC_TIME_SECONDS__:0.11\n",
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -126,3 +139,5 @@ def test_compile_cpp_returns_compilation_error_on_nonzero_exit(tmp_path, monkeyp
     assert result.status == CppCompilationStatus.COMPILATION_ERROR
     assert result.binary_path is None
     assert "expected ';'" in result.stderr
+    assert "__CONTESTER_EXEC_TIME_SECONDS__" not in result.stderr
+    assert result.compile_time_ms == 110

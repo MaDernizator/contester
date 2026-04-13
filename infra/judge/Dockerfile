@@ -7,7 +7,9 @@ ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends g++ \
+    && apt-get install -y --no-install-recommends \
+        g++ \
+        time \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /bin/bash judge \
     && mkdir -p /judge /judge-shared /tmp \
