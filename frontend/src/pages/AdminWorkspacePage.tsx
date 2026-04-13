@@ -249,6 +249,42 @@ function readStoredSubmissionFilters(): SubmissionFilterState {
   }
 }
 
+async function uploadAdminTestCasesFromFiles(
+  problemId: string,
+  files: File[],
+): Promise<TestCaseSummary[]> {
+  const formData = new FormData();
+
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  const response = await fetch(
+    `/api/v1/admin/problems/${problemId}/test-cases/upload`,
+    {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    },
+  );
+
+  const payload = (await response.json().catch(() => null)) as
+    | { test_cases?: TestCaseSummary[]; error?: { message?: string } }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.error?.message ?? "Failed to upload test cases from files.",
+    );
+  }
+
+  if (!payload || !Array.isArray(payload.test_cases)) {
+    throw new Error("Invalid upload response payload.");
+  }
+
+  return payload.test_cases;
+}
+
 export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => readStoredTab());
 
@@ -551,6 +587,41 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
       }
     })();
   }, [selectedTestCaseId, loadTestCaseDetail]);
+
+  async function handleUploadTestCaseFiles(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+
+    if (!selectedProblemId || files.length === 0) {
+      return;
+    }
+
+    setBusyAction("upload-test-cases");
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const created = await uploadAdminTestCasesFromFiles(selectedProblemId, files);
+      await loadTestCases(selectedProblemId);
+
+      if (created.length > 0) {
+        setSelectedTestCaseId(created[0].id);
+      }
+
+      setSuccessMessage(`Uploaded ${created.length} test case(s) from files.`);
+      setActiveTab("test-cases");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to upload test cases from files.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   async function handleCreateContest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1828,6 +1899,32 @@ export function AdminWorkspacePage({ user }: AdminWorkspacePageProps) {
               </div>
 
               <div className="stack">
+                <Panel
+                  title="Upload test cases from files"
+                  subtitle="Choose paired files like 01.in / 01.out, 02.in / 02.out."
+                >
+                  <div className="form-stack">
+                    <p className="muted small-text">
+                      Uploaded test cases are created as active hidden tests.
+                      Sample mode is disabled automatically.
+                    </p>
+
+                    <label className="button button--secondary file-picker-button">
+                      {busyAction === "upload-test-cases"
+                        ? "Uploading..."
+                        : "Choose files"}
+                      <input
+                        type="file"
+                        multiple
+                        accept=".in,.out,.txt"
+                        hidden
+                        disabled={busyAction !== null}
+                        onChange={handleUploadTestCaseFiles}
+                      />
+                    </label>
+                  </div>
+                </Panel>
+
                 <Panel title="Create test case">
                   <FormErrorList errors={testCaseFormErrors} />
 

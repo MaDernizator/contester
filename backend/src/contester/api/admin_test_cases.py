@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import re
 from http import HTTPStatus
+from pathlib import Path
 from uuid import UUID
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
+from werkzeug.datastructures import FileStorage
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
 from contester.auth import admin_required
@@ -27,6 +30,8 @@ from contester.services.positioning import (
 )
 
 admin_test_cases_blueprint = Blueprint("admin_test_cases", __name__)
+
+_TEST_CASE_FILENAME_PATTERN = re.compile(r"^(?P<index>\d+)\.(?P<kind>in|out)$", re.IGNORECASE)
 
 
 def _get_problem_or_404(problem_id: UUID) -> Problem:
@@ -52,6 +57,58 @@ def _get_test_case_or_404(test_case_id: UUID) -> TestCase:
 def _get_test_case_count(problem_id: UUID) -> int:
     statement = select(func.count(TestCase.id)).where(TestCase.problem_id == problem_id)
     return int(db.session.scalar(statement) or 0)
+
+
+def _read_uploaded_text(file: FileStorage) -> str:
+    filename = Path(file.filename or "").name
+    if not filename:
+        raise BadRequest("Each uploaded file must have a filename.")
+
+    raw_content = file.stream.read()
+    try:
+        return raw_content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise BadRequest(f"File {filename!r} must be UTF-8 text.") from error
+
+
+def _parse_uploaded_test_case_files(files: list[FileStorage]) -> list[tuple[int, str, str]]:
+    if not files:
+        raise BadRequest("At least one file must be uploaded.")
+
+    grouped: dict[int, dict[str, str]] = {}
+
+    for file in files:
+        filename = Path(file.filename or "").name
+        if not filename:
+            raise BadRequest("Each uploaded file must have a filename.")
+
+        match = _TEST_CASE_FILENAME_PATTERN.fullmatch(filename)
+        if match is None:
+            raise BadRequest(
+                "Invalid filename format. Expected files like '01.in' and '01.out'."
+            )
+
+        index = int(match.group("index"))
+        kind = match.group("kind").lower()
+
+        file_group = grouped.setdefault(index, {})
+        if kind in file_group:
+            raise BadRequest(f"Duplicate file for test case {index:02d}: {filename!r}.")
+
+        file_group[kind] = _read_uploaded_text(file)
+
+    parsed_test_cases: list[tuple[int, str, str]] = []
+    for index in sorted(grouped):
+        group = grouped[index]
+        if "in" not in group or "out" not in group:
+            raise BadRequest(
+                f"Missing matching pair for test case {index:02d}. "
+                "Each test must include both .in and .out files."
+            )
+
+        parsed_test_cases.append((index, group["in"], group["out"]))
+
+    return parsed_test_cases
 
 
 @admin_test_cases_blueprint.get("/admin/problems/<uuid:problem_id>/test-cases")
@@ -111,6 +168,53 @@ def create_test_case(problem_id: UUID):
         raise Conflict("Test case with the provided position already exists.") from error
 
     return jsonify({"test_case": serialize_test_case(test_case)}), HTTPStatus.CREATED
+
+
+@admin_test_cases_blueprint.post("/admin/problems/<uuid:problem_id>/test-cases/upload")
+@admin_required
+def upload_test_cases(problem_id: UUID):
+    problem = _get_problem_or_404(problem_id)
+    uploaded_files = request.files.getlist("files")
+    parsed_test_cases = _parse_uploaded_test_case_files(uploaded_files)
+
+    created_test_cases: list[TestCase] = []
+
+    try:
+        for _, input_data, expected_output in parsed_test_cases:
+            position = assign_test_case_insert_position(
+                problem_id=problem.id,
+                requested_position=None,
+            )
+            test_case = TestCase.create(
+                problem=problem,
+                position=position,
+                input_data=input_data,
+                expected_output=expected_output,
+                is_sample=False,
+                is_active=True,
+            )
+            db.session.add(test_case)
+            created_test_cases.append(test_case)
+
+        db.session.commit()
+    except ValueError as error:
+        db.session.rollback()
+        raise BadRequest(str(error)) from error
+    except IntegrityError as error:
+        db.session.rollback()
+        raise Conflict("Failed to create uploaded test cases.") from error
+
+    return (
+        jsonify(
+            {
+                "test_cases": [
+                    serialize_test_case_summary(test_case)
+                    for test_case in created_test_cases
+                ]
+            }
+        ),
+        HTTPStatus.CREATED,
+    )
 
 
 @admin_test_cases_blueprint.get("/admin/test-cases/<uuid:test_case_id>")
